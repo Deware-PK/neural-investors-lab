@@ -1,0 +1,23 @@
+[project]
+name = "neural-investors-lab"
+version = "0.1.0"
+description = "Modular hybrid quant AI architecture for stock market analysis"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "openai>=1.57.0",
+    "pandas>=2.2.3",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.6.1",
+    "psycopg2-binary>=2.9.10",
+    "redis>=5.2.0",
+    "sqlalchemy>=2.0.36",
+    "yfinance>=0.2.50",
+    "newspaper3k>=0.2.8",
+    "pandas-ta>=0.4.71b0",
+    "lxml-html-clean>=0.4.4",
+    "python-telegram-bot>=22.7",
+]
+
+[project.scripts]
+neural-investors-lab = "main:main"

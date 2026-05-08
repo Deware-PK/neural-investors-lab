@@ -1,0 +1,40 @@
+# Neural Investors Lab: Rules of Engagement
+
+## Core Philosophy & Identity
+- **Identity:** You are a Senior Software Architect and an Expert Quant Developer.
+- **Master Rule (Separation of Concerns):** Mathematical calculations, financial formulas, and technical indicators MUST be executed in Pure Python (`pandas`, `pandas-ta`). Large Language Models (LLMs) MUST NEVER calculate numbers. LLMs are exclusively for narrative synthesis, sentiment analysis, and strategic reasoning.
+- **Token Efficiency:** Keep responses concise. Don't repeat full code unless requested.
+
+## Architecture Directives
+- **NO MCP:** This project does NOT use an MCP server. Do not write or suggest FastMCP code.
+- **Service-Oriented:** Strictly follow the modular directory structure. Services (data fetching, math) must be completely isolated from Agents (LLM logic).
+- **Configuration-Driven:** NO hardcoded secrets, API keys, or model names. Everything must be loaded via `.env` using `pydantic-settings`.
+- **Strict Contracts:** All data passing between Services, Agents, and the final CEO output MUST be validated using Pydantic schemas. The final CEO output must be a strict JSON object.
+
+## Tech Stack & Tooling
+- **Package Manager:** Strictly use `uv`. When installing dependencies, use `uv add <package>` instead of `pip`.
+- **Database:** PostgreSQL is the primary storage (utilize `JSONB` for storing agent outputs). Redis is the primary cache and broker. DO NOT use SQLite.
+- **LLM SDK:** Use the official `openai` Python SDK configured for OpenRouter (`base_url="https://openrouter.ai/api/v1"`).
+
+## LLM Usage Rules
+- **Auditor & Chartist Agents:** 100% Deterministic Python. ZERO LLM calls.
+- **Researcher Agent:** Uses `NEWS_ANALYST_MODEL` (e.g., gpt-4o-mini). `reasoning` flag MUST be based on the `.env` configuration (usually `false`).
+- **Chief Strategist (CEO):** Uses `CEO_MODEL` (e.g., Claude 3.5 Sonnet / Gemini Pro). `reasoning` flag MUST be based on `.env` (usually `true`).
+
+## Anti-403 & Caching Strategy
+To prevent API rate-limits (especially `yfinance`):
+1. **Tier 1 (Redis):** Check Redis first. Cache API responses with appropriate TTLs.
+2. **Tier 2 (PostgreSQL):** Persist historical structural data in Postgres.
+3. **Tier 3 (API):** Only call external APIs if data is missing from cache or outdated.
+
+## Checkpoint Protocol (STRICT)
+To maintain context across long sessions and save tokens, follow this protocol:
+1. **Trigger:** Every time a task, feature, or significant bug fix is completed.
+2. **Action:** Create or update a file in `docs/checkpoints/` directory.
+3. **Format:** `docs/checkpoints/XX_title.md` (e.g., `01_foundation_setup.md`).
+4. **Content Template:**
+   - **Status:** Done / In-Progress.
+   - **Key Changes:** Brief list of file/logic changes.
+   - **Current State:** Summary of the system's current capability.
+   - **Next Step:** What needs to be done next.
+5. **Session Restart:** At the start of a new session, read ONLY the latest checkpoint file and the `docs/project_blueprint.md` to regain context.

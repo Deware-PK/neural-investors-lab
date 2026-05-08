@@ -1,0 +1,68 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Python caches and bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Build and package artifacts
+build/
+dist/
+wheels/
+*.egg-info/
+.eggs/
+*.egg
+
+# Test, coverage, and type-check caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Logs and local runtime output
+*.log
+logs/
+tmp/
+temp/
+.cache/
+reports/
+outputs/
+
+# Local databases and data dumps
+*.db
+*.sqlite
+*.sqlite3
+*.dump
+*.sql
+*.parquet
+*.feather
+
+# IDE and OS files
+.idea/
+.vscode/
+.windsurf/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Notebook checkpoints
+.ipynb_checkpoints/
