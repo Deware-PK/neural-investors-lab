@@ -17,7 +17,7 @@ class FundamentalSnapshot(BaseModel):
 class FundamentalAnalysis(BaseModel):
     ticker: str = Field(min_length=1, max_length=16)
     piotroski_f_score: int | None = Field(default=None, ge=0, le=9)
-    peg_ratio: float | None = Field(default=None, ge=0)
+    peg_ratio: float | None = None
     altman_z_score: float | None = None
     tags: list[str] = Field(default_factory=list)
     strengths: list[str] = Field(default_factory=list)

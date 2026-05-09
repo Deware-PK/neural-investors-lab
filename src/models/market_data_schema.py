@@ -28,9 +28,9 @@ class TickerProfile(BaseModel):
     currency: str | None = Field(default=None, min_length=3, max_length=3)
     market_cap: float | None = Field(default=None, ge=0)
     beta: float | None = None
-    trailing_pe: float | None = Field(default=None, ge=0)
-    forward_pe: float | None = Field(default=None, ge=0)
-    dividend_yield: float | None = Field(default=None, ge=0)
+    trailing_pe: float | None = None
+    forward_pe: float | None = None
+    dividend_yield: float | None = None
     earnings_growth: float | None = None
     revenue_growth: float | None = None
 

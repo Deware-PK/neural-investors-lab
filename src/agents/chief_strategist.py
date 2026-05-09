@@ -1,6 +1,6 @@
 import logging
 
-from src.agents.json_utils import parse_json_model
+from src.agents.json_utils import extract_json_object, normalize_strategy_draft
 from src.agents.researcher import ResearcherAgent
 from src.core.config import Settings, get_settings
 from src.core.llm_client import ChatMessage, OpenRouterClient, get_openrouter_client
@@ -65,6 +65,15 @@ class ChiefStrategistAgent:
             final_research = self.researcher.investigate_conflict(fundamentals.ticker, conflict.deep_dive_query)
         return self._generate_strategy(fundamentals, technicals, final_research, conflict)
 
+    def draft_strategy_with_assessment(
+        self,
+        fundamentals: FundamentalAnalysis,
+        technicals: TechnicalAnalysis,
+        research: ResearchFinding,
+        conflict: ConflictAssessment,
+    ) -> StrategyDraft:
+        return self._generate_strategy(fundamentals, technicals, research, conflict)
+
     def _generate_strategy(
         self,
         fundamentals: FundamentalAnalysis,
@@ -100,7 +109,9 @@ class ChiefStrategistAgent:
             use_reasoning=self.settings.ceo_model_reasoning,
             temperature=0.1,
         )
-        draft = parse_json_model(response.content, StrategyDraft)
+        payload = extract_json_object(response.content)
+        payload = normalize_strategy_draft(payload, fundamentals.ticker)
+        draft = StrategyDraft.model_validate(payload)
         if draft.ticker.upper() != fundamentals.ticker.upper():
             draft = draft.model_copy(update={"ticker": fundamentals.ticker.upper()})
         if draft.conflict_assessment is None:
