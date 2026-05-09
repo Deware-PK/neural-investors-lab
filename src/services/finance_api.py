@@ -1,10 +1,14 @@
+import logging
+import time
 from datetime import date
+from threading import Lock
 from typing import Any
 
 import pandas as pd
 import yfinance as yf
 from redis import Redis
 
+from src.core.config import Settings, get_settings
 from src.core.db_redis import get_json_cache, set_json_cache
 from src.models.market_data_schema import FinanceBundle, FinancialStatement, PriceBar, TickerProfile
 
@@ -14,10 +18,14 @@ HISTORY_TTL_SECONDS = 60 * 15
 STATEMENT_TTL_SECONDS = 60 * 60 * 24
 BUNDLE_TTL_SECONDS = 60 * 15
 
+logger = logging.getLogger(__name__)
+_FINANCE_FETCH_LOCK = Lock()
+
 
 class FinanceAPI:
-    def __init__(self, redis_client: Redis | None = None) -> None:
+    def __init__(self, redis_client: Redis | None = None, settings: Settings | None = None) -> None:
         self.redis_client = redis_client
+        self.settings = settings or get_settings()
 
     def fetch_ticker_profile(self, ticker: str) -> TickerProfile:
         symbol = ticker.upper()
@@ -26,6 +34,7 @@ class FinanceAPI:
         if cached is not None:
             return TickerProfile.model_validate(cached)
 
+        self._throttle_external_fetch(f"profile:{symbol}")
         info = yf.Ticker(symbol).get_info()
         profile = TickerProfile(
             ticker=symbol,
@@ -51,6 +60,7 @@ class FinanceAPI:
         if cached is not None:
             return [PriceBar.model_validate(item) for item in cached]
 
+        self._throttle_external_fetch(f"history:{symbol}:{period}:{interval}")
         frame = yf.Ticker(symbol).history(period=period, interval=interval, auto_adjust=False)
         bars = self.price_frame_to_bars(frame)
         self._set_cached(cache_key, [bar.model_dump(mode="json") for bar in bars], HISTORY_TTL_SECONDS)
@@ -63,6 +73,7 @@ class FinanceAPI:
         if cached is not None:
             return FinancialStatement.model_validate(cached)
 
+        self._throttle_external_fetch(f"income:{symbol}:{period}")
         ticker_obj = yf.Ticker(symbol)
         frame = ticker_obj.quarterly_income_stmt if period == "quarterly" else ticker_obj.income_stmt
         statement = self.statement_frame_to_model(symbol, "income_statement", period, frame)
@@ -76,6 +87,7 @@ class FinanceAPI:
         if cached is not None:
             return FinancialStatement.model_validate(cached)
 
+        self._throttle_external_fetch(f"balance:{symbol}:{period}")
         ticker_obj = yf.Ticker(symbol)
         frame = ticker_obj.quarterly_balance_sheet if period == "quarterly" else ticker_obj.balance_sheet
         statement = self.statement_frame_to_model(symbol, "balance_sheet", period, frame)
@@ -167,6 +179,14 @@ class FinanceAPI:
             set_json_cache(self.redis_client, key, value, ttl_seconds)
         except Exception:
             return
+
+    def _throttle_external_fetch(self, label: str) -> None:
+        delay_seconds = self.settings.finance_fetch_delay_seconds
+        if delay_seconds <= 0:
+            return
+        with _FINANCE_FETCH_LOCK:
+            logger.debug("Throttling finance fetch %s for %.2fs", label, delay_seconds)
+            time.sleep(delay_seconds)
 
     @staticmethod
     def _as_optional_float(value: Any) -> float | None:

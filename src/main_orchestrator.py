@@ -50,9 +50,9 @@ class BoardroomOrchestrator:
     ) -> None:
         self.settings = settings or get_settings()
         redis_client = create_optional_redis_client(self.settings)
-        finance_api = FinanceAPI(redis_client=redis_client)
+        finance_api = FinanceAPI(redis_client=redis_client, settings=self.settings)
         indicator_math = IndicatorMath()
-        deep_research = DeepResearchService(redis_client=redis_client)
+        deep_research = DeepResearchService(redis_client=redis_client, settings=self.settings)
         self.auditor = auditor or AuditorAgent(finance_api=finance_api, indicator_math=indicator_math)
         self.chartist = chartist or ChartistAgent(finance_api=finance_api, indicator_math=indicator_math)
         self.researcher = researcher or ResearcherAgent(deep_research=deep_research, settings=self.settings)

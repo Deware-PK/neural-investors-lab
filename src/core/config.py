@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     news_analyst_model_reasoning: bool = Field(default=False, alias="NEWS_ANALYST_MODEL_REASONING")
     postgres_url: str = Field(default="postgresql://user:password@localhost:5432/arena_db", alias="POSTGRES_URL")
     redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
+    finance_fetch_delay_seconds: float = Field(default=1.5, ge=0, alias="FINANCE_FETCH_DELAY_SECONDS")
+    research_fetch_delay_seconds: float = Field(default=1.5, ge=0, alias="RESEARCH_FETCH_DELAY_SECONDS")
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(default="INFO", alias="LOG_LEVEL")
 
     model_config = SettingsConfigDict(

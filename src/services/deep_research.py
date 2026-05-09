@@ -1,13 +1,19 @@
+import logging
+import time
 from datetime import datetime
+from threading import Lock
 from typing import Any
 
 from redis import Redis
 
+from src.core.config import Settings, get_settings
 from src.core.db_redis import get_json_cache, set_json_cache
 from src.models.research_schema import NewsArticle
 
 
 ARTICLE_TTL_SECONDS = 60 * 60 * 24
+logger = logging.getLogger(__name__)
+_RESEARCH_FETCH_LOCK = Lock()
 
 
 class ArticleExtractionError(RuntimeError):
@@ -15,8 +21,9 @@ class ArticleExtractionError(RuntimeError):
 
 
 class DeepResearchService:
-    def __init__(self, redis_client: Redis | None = None) -> None:
+    def __init__(self, redis_client: Redis | None = None, settings: Settings | None = None) -> None:
         self.redis_client = redis_client
+        self.settings = settings or get_settings()
 
     def extract_article(self, url: str, source: str | None = None) -> NewsArticle:
         cache_key = f"research:article:{url}"
@@ -32,6 +39,7 @@ class DeepResearchService:
 
         article = Article(url)
         try:
+            self._throttle_external_fetch(url)
             article.download()
             article.parse()
         except Exception as error:
@@ -70,3 +78,11 @@ class DeepResearchService:
             set_json_cache(self.redis_client, key, value, ttl_seconds)
         except Exception:
             return
+
+    def _throttle_external_fetch(self, label: str) -> None:
+        delay_seconds = self.settings.research_fetch_delay_seconds
+        if delay_seconds <= 0:
+            return
+        with _RESEARCH_FETCH_LOCK:
+            logger.debug("Throttling research fetch %s for %.2fs", label, delay_seconds)
+            time.sleep(delay_seconds)
