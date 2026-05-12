@@ -47,14 +47,21 @@ def initialize_database(engine: Engine | None = None) -> None:
     metadata.create_all(resolved_engine)
 
 
-def persist_analysis_output(session: Session, ticker: str, output: dict[str, Any], record_id: UUID | None = None) -> str:
+def persist_analysis_output(
+    session: Session,
+    ticker: str,
+    output: dict[str, Any],
+    record_id: UUID | None = None,
+    created_at_override: datetime | None = None,
+) -> str:
     resolved_record_id = record_id or uuid4()
+    resolved_created_at = created_at_override or datetime.now(UTC)
     session.execute(
         insert(analysis_outputs).values(
             id=str(resolved_record_id),
             ticker=ticker.upper(),
             output=output,
-            created_at=datetime.now(UTC),
+            created_at=resolved_created_at,
         )
     )
     session.commit()

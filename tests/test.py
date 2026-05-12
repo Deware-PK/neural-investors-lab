@@ -7,6 +7,7 @@ from src.core.config import get_settings
 from src.core.logging import configure_logging
 from src.evaluation.backtest_engine import BacktestEngine
 from src.evaluation.performance_logger import PerformanceLogger
+from src.evaluation.synthetic_signal_generator import SyntheticSignalGenerator
 from src.interfaces.formatter import format_boardroom_result_html, format_final_synthesis_html
 from src.main_orchestrator import BoardroomOrchestrator
 from src.models.agent_schema import ConflictAssessment, StrategyDraft
@@ -217,6 +218,17 @@ def run_live_test(ticker: str, article_urls: list[str], persist: bool) -> None:
     print(format_boardroom_result_html(result))
 
 
+def run_synthetic_backtest_generation(ticker: str) -> None:
+    settings = get_settings()
+    configure_logging(settings.log_level)
+    generator = SyntheticSignalGenerator()
+    count = generator.generate(ticker.upper())
+    print(f"\nSynthetic signals generated for {ticker.upper()}: {count}")
+    if count > 0:
+        print("Running backtest on all data (real + synthetic)...")
+        run_backtest_report()
+
+
 def run_backtest_report() -> None:
     settings = get_settings()
     configure_logging(settings.log_level)
@@ -245,11 +257,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--article-url", action="append", default=[], help="article URL for live researcher context")
     parser.add_argument("--no-persist", action="store_true", help="skip PostgreSQL persistence in live mode")
     parser.add_argument("--backtest-report", action="store_true", help="run backtest on historical predictions and save JSON report")
+    parser.add_argument("--generate-synthetic-backtest", metavar="TICKER", help="generate synthetic historical signals for a ticker then backtest")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    if args.generate_synthetic_backtest:
+        run_synthetic_backtest_generation(args.generate_synthetic_backtest)
+        return
     if args.backtest_report:
         run_backtest_report()
         return
