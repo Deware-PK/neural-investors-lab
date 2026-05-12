@@ -17,10 +17,10 @@ MIN_BARS = 200
 COOLDOWN_DAYS = 10
 RSI_MIN = 25
 RSI_MAX = 65
-ATR_STOP_MULTIPLIER = 1.5
+ATR_STOP_MULTIPLIER = 2.0
 ATR_TAKE_PROFIT_MULTIPLIER = 3.0
-MIN_RR_RATIO = 1.5
-MIN_UPSIDE_PCT = 0.04
+MIN_RR_RATIO = 1.25
+MIN_UPSIDE_PCT = 0.03
 DEFAULT_POSITION_SIZE_PCT = 5.0
 
 
@@ -138,25 +138,36 @@ class SyntheticSignalGenerator:
             trendline_resistance = analysis.trendline.resistance_price
 
         base_sl = entry_price - ATR_STOP_MULTIPLIER * atr
-        sl_candidates = [base_sl]
+        support_sl = base_sl
         if trendline_support is not None:
-            sl_candidates.append(trendline_support)
-        if supports:
-            sl_candidates.append(supports[0])
-        stop_loss = round(max(sl_candidates), 2)
+            support_sl = trendline_support - (0.5 * atr)
+        elif supports:
+            support_sl = supports[0] - (0.5 * atr)
+        stop_loss = round(max(base_sl, support_sl), 2)
 
         risk_amount = entry_price - stop_loss
-        min_required_tp = entry_price + (risk_amount * MIN_RR_RATIO)
-        base_tp = entry_price + (ATR_TAKE_PROFIT_MULTIPLIER * atr)
-        take_profit = round(max(min_required_tp, base_tp), 2)
 
-        if trendline_resistance is not None and trendline_resistance > take_profit:
-            take_profit = round(trendline_resistance, 2)
-        if resistances and resistances[0] > take_profit:
-            take_profit = round(resistances[0], 2)
+        atr_tp = entry_price + (ATR_TAKE_PROFIT_MULTIPLIER * atr)
+        natural_tp = None
+        if trendline_resistance is not None:
+            natural_tp = trendline_resistance
+        elif resistances:
+            natural_tp = resistances[0]
 
-        upside_pct = (take_profit - entry_price) / entry_price
-        if upside_pct < MIN_UPSIDE_PCT:
+        if natural_tp is not None:
+            natural_reward = natural_tp - entry_price
+            natural_rr = natural_reward / risk_amount if risk_amount > 0 else 0
+            if natural_rr < MIN_RR_RATIO:
+                take_profit = round(atr_tp, 2)
+            else:
+                take_profit = round(natural_tp, 2)
+        else:
+            take_profit = round(atr_tp, 2)
+
+        reward_amount = take_profit - entry_price
+        rr_ratio = reward_amount / risk_amount if risk_amount > 0 else 0
+        upside_pct = reward_amount / entry_price
+        if rr_ratio < MIN_RR_RATIO or upside_pct < MIN_UPSIDE_PCT:
             return None
 
         conviction = SyntheticSignalGenerator._compute_conviction(analysis)
