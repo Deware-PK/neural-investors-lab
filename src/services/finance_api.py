@@ -1,6 +1,6 @@
 import logging
 import time
-from datetime import date
+from datetime import UTC, date, datetime
 from threading import Lock
 from typing import Any
 
@@ -11,12 +11,14 @@ from redis import Redis
 from src.core.config import Settings, get_settings
 from src.core.db_redis import get_json_cache, set_json_cache
 from src.models.market_data_schema import FinanceBundle, FinancialStatement, PriceBar, TickerProfile
+from src.models.research_schema import NewsArticle
 
 
 PROFILE_TTL_SECONDS = 60 * 60 * 12
 HISTORY_TTL_SECONDS = 60 * 15
 STATEMENT_TTL_SECONDS = 60 * 60 * 24
 BUNDLE_TTL_SECONDS = 60 * 15
+NEWS_TTL_SECONDS = 60 * 15
 
 logger = logging.getLogger(__name__)
 _FINANCE_FETCH_LOCK = Lock()
@@ -111,6 +113,28 @@ class FinanceAPI:
         self._set_cached(cache_key, bundle.model_dump(mode="json"), BUNDLE_TTL_SECONDS)
         return bundle
 
+    def fetch_ticker_news(self, ticker: str, limit: int = 10) -> list[NewsArticle]:
+        symbol = ticker.upper()
+        cache_key = f"finance:news:{symbol}:{limit}"
+        cached = self._get_cached(cache_key)
+        if cached is not None:
+            return [NewsArticle.model_validate(item) for item in cached]
+
+        self._throttle_external_fetch(f"news:{symbol}:{limit}")
+        try:
+            raw_items = yf.Ticker(symbol).news or []
+        except Exception:
+            logger.exception("Failed to fetch yfinance news for %s", symbol)
+            raw_items = []
+
+        articles: list[NewsArticle] = []
+        for item in raw_items[:limit]:
+            article = self._news_item_to_article(item)
+            if article is not None:
+                articles.append(article)
+        self._set_cached(cache_key, [article.model_dump(mode="json") for article in articles], NEWS_TTL_SECONDS)
+        return articles
+
     @staticmethod
     def price_frame_to_bars(frame: pd.DataFrame) -> list[PriceBar]:
         normalized = frame.reset_index()
@@ -189,6 +213,44 @@ class FinanceAPI:
             time.sleep(delay_seconds)
 
     @staticmethod
+    def _news_item_to_article(item: dict[str, Any]) -> NewsArticle | None:
+        content = item.get("content") if isinstance(item.get("content"), dict) else {}
+        title = FinanceAPI._as_optional_str(item.get("title") or item.get("headline") or content.get("title"))
+        canonical_url = content.get("canonicalUrl") if isinstance(content.get("canonicalUrl"), dict) else {}
+        click_url = content.get("clickThroughUrl") if isinstance(content.get("clickThroughUrl"), dict) else {}
+        url = FinanceAPI._as_optional_str(
+            item.get("link")
+            or item.get("url")
+            or canonical_url.get("url")
+            or click_url.get("url")
+        )
+        if title is None or url is None:
+            return None
+        provider = content.get("provider") if isinstance(content.get("provider"), dict) else {}
+        source = FinanceAPI._as_optional_str(
+            item.get("publisher")
+            or item.get("source")
+            or provider.get("displayName")
+        )
+        published_at = FinanceAPI._as_optional_datetime(
+            item.get("providerPublishTime")
+            or item.get("published_at")
+            or content.get("pubDate")
+            or content.get("displayTime")
+        )
+        summary = FinanceAPI._as_optional_str(item.get("summary") or item.get("snippet") or content.get("summary"))
+        try:
+            return NewsArticle(
+                title=title,
+                url=url,
+                source=source,
+                published_at=published_at,
+                extracted_text=summary,
+            )
+        except Exception:
+            return None
+
+    @staticmethod
     def _as_optional_float(value: Any) -> float | None:
         if value is None:
             return None
@@ -206,3 +268,20 @@ class FinanceAPI:
             return None
         converted = str(value).strip()
         return converted or None
+
+    @staticmethod
+    def _as_optional_datetime(value: Any) -> datetime | None:
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, str):
+            try:
+                return datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError:
+                return None
+        try:
+            timestamp = float(value)
+        except (TypeError, ValueError):
+            return None
+        return datetime.fromtimestamp(timestamp, tz=UTC)

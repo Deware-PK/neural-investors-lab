@@ -9,6 +9,7 @@ from src.models.fundamental_schema import FundamentalAnalysis
 from src.models.research_schema import ResearchFinding
 from src.models.synthesis_schema import Action
 from src.models.technical_schema import TechnicalAnalysis
+from src.models.vision_schema import VisualChartAnalysis
 
 
 logger = logging.getLogger(__name__)
@@ -57,13 +58,14 @@ class ChiefStrategistAgent:
         fundamentals: FundamentalAnalysis,
         technicals: TechnicalAnalysis,
         research: ResearchFinding,
+        visual_chart_analysis: VisualChartAnalysis | None = None,
     ) -> StrategyDraft:
         conflict = self.identify_contradictions(fundamentals, technicals, research)
         final_research = research
         if conflict.has_conflict and self.researcher is not None and conflict.deep_dive_query is not None:
             logger.info("CEO triggered debate deep-dive for %s", fundamentals.ticker)
             final_research = self.researcher.investigate_conflict(fundamentals.ticker, conflict.deep_dive_query)
-        return self._generate_strategy(fundamentals, technicals, final_research, conflict)
+        return self._generate_strategy(fundamentals, technicals, final_research, conflict, visual_chart_analysis)
 
     def draft_strategy_with_assessment(
         self,
@@ -71,8 +73,9 @@ class ChiefStrategistAgent:
         technicals: TechnicalAnalysis,
         research: ResearchFinding,
         conflict: ConflictAssessment,
+        visual_chart_analysis: VisualChartAnalysis | None = None,
     ) -> StrategyDraft:
-        return self._generate_strategy(fundamentals, technicals, research, conflict)
+        return self._generate_strategy(fundamentals, technicals, research, conflict, visual_chart_analysis)
 
     def _generate_strategy(
         self,
@@ -80,6 +83,7 @@ class ChiefStrategistAgent:
         technicals: TechnicalAnalysis,
         research: ResearchFinding,
         conflict: ConflictAssessment,
+        visual_chart_analysis: VisualChartAnalysis | None = None,
     ) -> StrategyDraft:
         client = self.llm_client or get_openrouter_client(self.settings)
         messages = [
@@ -97,6 +101,7 @@ class ChiefStrategistAgent:
                     f"Fundamentals: {fundamentals.model_dump(mode='json')}\n"
                     f"Technicals: {technicals.model_dump(mode='json')}\n"
                     f"Research: {research.model_dump(mode='json')}\n"
+                    f"VisualChartAnalysis: {visual_chart_analysis.model_dump(mode='json') if visual_chart_analysis else None}\n"
                     f"ConflictAssessment: {conflict.model_dump(mode='json')}\n"
                     "Return JSON fields: ticker, action, conviction_score, entry_price, take_profit, stop_loss, "
                     "proposed_position_size_pct, thesis, key_risks, evidence, conflict_assessment."

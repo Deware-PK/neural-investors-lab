@@ -97,9 +97,130 @@ def normalize_strategy_draft(payload: dict[str, Any], ticker: str) -> dict[str, 
     # Fix conflict_assessment: if it's a string, default to None
     if "conflict_assessment" in payload and isinstance(payload["conflict_assessment"], str):
         payload["conflict_assessment"] = None
+    # Fix conflict_assessment: if it's a boolean, convert to None
+    elif "conflict_assessment" in payload and isinstance(payload["conflict_assessment"], bool):
+        payload["conflict_assessment"] = None
     # Fix conflict_assessment: add missing ticker field
     elif "conflict_assessment" in payload and isinstance(payload["conflict_assessment"], dict):
         if "ticker" not in payload["conflict_assessment"]:
             payload["conflict_assessment"]["ticker"] = ticker
+
+    return payload
+
+
+def normalize_visual_chart_analysis(payload: dict[str, Any]) -> dict[str, Any]:
+    """Fix common LLM JSON errors in VisualChartAnalysis responses."""
+    import re
+
+    # Fix confidence_score: convert 0-100 scale to 0-1 scale
+    if "confidence_score" in payload and isinstance(payload["confidence_score"], (int, float)):
+        if payload["confidence_score"] > 1:
+            payload["confidence_score"] = payload["confidence_score"] / 100
+
+    # Fix support_zones: extract numbers from strings like "195 - 200"
+    if "support_zones" in payload and isinstance(payload["support_zones"], list):
+        normalized_support = []
+        for item in payload["support_zones"]:
+            if isinstance(item, str):
+                # Extract first number from string
+                match = re.search(r"[\d.]+", item)
+                if match:
+                    try:
+                        normalized_support.append(float(match.group()))
+                    except ValueError:
+                        pass
+            elif isinstance(item, (int, float)):
+                normalized_support.append(float(item))
+        payload["support_zones"] = normalized_support
+
+    # Fix resistance_zones: extract numbers from strings like "220 - 225 (Current psychological level)"
+    if "resistance_zones" in payload and isinstance(payload["resistance_zones"], list):
+        normalized_resistance = []
+        for item in payload["resistance_zones"]:
+            if isinstance(item, str):
+                # Extract first number from string
+                match = re.search(r"[\d.]+", item)
+                if match:
+                    try:
+                        normalized_resistance.append(float(match.group()))
+                    except ValueError:
+                        pass
+            elif isinstance(item, (int, float)):
+                normalized_resistance.append(float(item))
+        payload["resistance_zones"] = normalized_resistance
+
+    return payload
+
+
+def normalize_research_finding(payload: dict[str, Any]) -> dict[str, Any]:
+    """Fix common LLM JSON errors in ResearchFinding responses."""
+    # Fix sentiment_score: convert 0-100 scale to -1 to 1 scale
+    if "sentiment_score" in payload and isinstance(payload["sentiment_score"], (int, float)):
+        if abs(payload["sentiment_score"]) > 1:
+            # Convert from 0-100 to -1 to 1: (score - 50) / 50
+            payload["sentiment_score"] = (payload["sentiment_score"] - 50) / 50
+            # Clamp to valid range
+            payload["sentiment_score"] = max(-1, min(1, payload["sentiment_score"]))
+
+    # Fix articles field: if items are strings (URLs or titles), convert to minimal NewsArticle objects
+    # Also strip extra fields that the LLM may add (sentiment, sentiment_contribution, etc.)
+    allowed_article_fields = {"title", "url", "source", "published_at", "extracted_text"}
+    if "articles" in payload and isinstance(payload["articles"], list):
+        normalized_articles = []
+        for item in payload["articles"]:
+            if isinstance(item, str):
+                # Convert string to NewsArticle object (use as both title and url)
+                normalized_articles.append({"title": item, "url": item})
+            elif isinstance(item, dict):
+                # Strip extra fields not in NewsArticle schema
+                cleaned = {k: v for k, v in item.items() if k in allowed_article_fields}
+                # Ensure title is present
+                if "title" not in cleaned and "url" in cleaned:
+                    cleaned["title"] = cleaned["url"]
+                elif "title" not in cleaned:
+                    cleaned["title"] = "Unknown"
+                normalized_articles.append(cleaned)
+        payload["articles"] = normalized_articles
+
+    return payload
+
+
+def normalize_risk_review(payload: dict[str, Any]) -> dict[str, Any]:
+    """Fix common LLM JSON errors in RiskReview responses."""
+    # Fix risk_decision field: map common LLM errors to valid enum values
+    risk_decision_mapping = {
+        "approved_with_limit": "adjusted",
+        "approved_with_conditions": "adjusted",
+        "conditional_approval": "adjusted",
+        "approve_with_limit": "adjusted",
+        "approved_limited": "adjusted",
+        "modified": "adjusted",
+        "adjusted_down": "adjusted",
+        "adjusted_up": "adjusted",
+        "partially_approved": "adjusted",
+        "limited": "adjusted",
+        "restricted": "adjusted",
+        "reject": "vetoed",
+        "denied": "vetoed",
+        "no": "vetoed",
+        "disapproved": "vetoed",
+        "rejected": "vetoed",
+        "blocked": "vetoed",
+        "yes": "approved",
+        "accept": "approved",
+        "accepted": "approved",
+        "ok": "approved",
+        "go": "approved",
+        "hnew": "approved",
+        "wait": "approved",
+        "watch": "approved",
+    }
+    valid_risk_decisions = {"approved", "vetoed", "adjusted"}
+    if "risk_decision" in payload and isinstance(payload["risk_decision"], str):
+        decision_lower = payload["risk_decision"].strip().lower()
+        if decision_lower in risk_decision_mapping:
+            payload["risk_decision"] = risk_decision_mapping[decision_lower]
+        elif decision_lower in valid_risk_decisions:
+            payload["risk_decision"] = decision_lower
 
     return payload

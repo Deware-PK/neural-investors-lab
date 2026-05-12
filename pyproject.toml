@@ -17,6 +17,7 @@ dependencies = [
     "pandas-ta>=0.4.71b0",
     "lxml-html-clean>=0.4.4",
     "python-telegram-bot>=22.7",
+    "mplfinance>=0.12.10b0",
 ]
 
 [project.scripts]

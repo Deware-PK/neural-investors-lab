@@ -9,7 +9,7 @@ SentimentLabel = Literal["bullish", "bearish", "neutral", "mixed"]
 
 class NewsArticle(BaseModel):
     title: str
-    url: HttpUrl
+    url: str | None = None
     source: str | None = None
     published_at: datetime | None = None
     extracted_text: str | None = None

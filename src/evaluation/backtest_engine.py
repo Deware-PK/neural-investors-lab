@@ -4,6 +4,7 @@ from datetime import date, datetime, timedelta
 from sqlalchemy.orm import Session, sessionmaker
 
 from src.core.db_postgres import create_session_factory, fetch_historical_analysis_outputs
+from src.core.db_redis import create_optional_redis_client
 from src.models.evaluation_schema import BacktestOutcome, HistoricalPrediction
 from src.models.market_data_schema import PriceBar
 from src.models.synthesis_schema import Action, FinalSynthesis
@@ -15,7 +16,8 @@ logger = logging.getLogger(__name__)
 
 class BacktestEngine:
     def __init__(self, finance_api: FinanceAPI | None = None, session_factory: sessionmaker[Session] | None = None) -> None:
-        self.finance_api = finance_api or FinanceAPI()
+        redis_client = create_optional_redis_client()
+        self.finance_api = finance_api or FinanceAPI(redis_client=redis_client)
         self.session_factory = session_factory or create_session_factory()
 
     def load_buy_recommendations(self) -> list[HistoricalPrediction]:
@@ -40,24 +42,39 @@ class BacktestEngine:
         return predictions
 
     def run(self) -> list[BacktestOutcome]:
+        predictions = self.load_buy_recommendations()
         outcomes: list[BacktestOutcome] = []
-        for prediction in self.load_buy_recommendations():
-            try:
-                outcomes.append(self.evaluate_prediction(prediction))
-            except Exception:
-                logger.exception("Failed to evaluate prediction %s for %s", prediction.record_id, prediction.ticker)
-        return outcomes
+        if not predictions:
+            return outcomes
 
-    def evaluate_prediction(self, prediction: HistoricalPrediction) -> BacktestOutcome:
-        start_date = prediction.created_at.date()
-        end_date = start_date + timedelta(days=35)
-        bars = self.finance_api.fetch_historical_prices(
-            prediction.ticker,
-            period="60d",
-            interval="1d",
+        # Group predictions by ticker to fetch each ticker's history only once
+        by_ticker: dict[str, list[HistoricalPrediction]] = {}
+        for prediction in predictions:
+            by_ticker.setdefault(prediction.ticker, []).append(prediction)
+
+        logger.info(
+            "Backtest: %d predictions across %d unique tickers (%d duplicate fetches avoided)",
+            len(predictions),
+            len(by_ticker),
+            len(predictions) - len(by_ticker),
         )
-        window = self._filter_forward_window(bars, start_date, end_date)
-        return self.calculate_outcome(prediction, window)
+
+        for ticker, ticker_predictions in by_ticker.items():
+            try:
+                bars = self.finance_api.fetch_historical_prices(ticker, period="60d", interval="1d")
+            except Exception:
+                logger.exception("Failed to fetch history for %s", ticker)
+                continue
+            for prediction in ticker_predictions:
+                try:
+                    start_date = prediction.created_at.date()
+                    end_date = start_date + timedelta(days=35)
+                    window = self._filter_forward_window(bars, start_date, end_date)
+                    outcomes.append(self.calculate_outcome(prediction, window))
+                except Exception:
+                    logger.exception("Failed to evaluate prediction %s for %s", prediction.record_id, prediction.ticker)
+
+        return outcomes
 
     @staticmethod
     def calculate_outcome(prediction: HistoricalPrediction, bars: list[PriceBar]) -> BacktestOutcome:

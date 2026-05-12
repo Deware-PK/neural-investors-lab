@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 
 from src.core.config import get_settings
 from src.core.logging import configure_logging
@@ -21,6 +22,7 @@ from src.models.technical_schema import (
     VolatilitySignal,
     VolumeSignal,
 )
+from src.models.vision_schema import VisualChartAnalysis
 
 
 class FakeAuditor:
@@ -49,6 +51,18 @@ class FakeChartist:
             support_levels=[95],
             resistance_levels=[110],
             tags=["trend:bullish", "volume:bullish"],
+        )
+
+    async def get_visual_analysis(self, ticker: str) -> VisualChartAnalysis:
+        return VisualChartAnalysis(
+            ticker=ticker,
+            sentiment="bullish",
+            confidence_score=0.7,
+            summary="Synthetic visual chart analysis.",
+            observed_patterns=["Higher highs"],
+            support_zones=[95],
+            resistance_zones=[110],
+            risks=["Synthetic chart risk"],
         )
 
 
@@ -83,6 +97,7 @@ class FakeChiefStrategist:
         technicals: TechnicalAnalysis,
         research: ResearchFinding,
         conflict: ConflictAssessment,
+        visual_chart_analysis: VisualChartAnalysis | None = None,
     ) -> StrategyDraft:
         return StrategyDraft(
             ticker=fundamentals.ticker,
@@ -202,16 +217,42 @@ def run_live_test(ticker: str, article_urls: list[str], persist: bool) -> None:
     print(format_boardroom_result_html(result))
 
 
+def run_backtest_report() -> None:
+    settings = get_settings()
+    configure_logging(settings.log_level)
+    engine = BacktestEngine()
+    outcomes = engine.run()
+    report = PerformanceLogger().build_report(outcomes)
+    print("\nBacktest Report")
+    print(f"Total trades: {report.total_trades}")
+    print(f"Win rate: {report.win_rate_pct:.2f}%")
+    t7 = f"{report.average_t7_return_pct:.2f}%" if report.average_t7_return_pct is not None else "N/A"
+    t30 = f"{report.average_t30_return_pct:.2f}%" if report.average_t30_return_pct is not None else "N/A"
+    mdd = f"{report.average_max_drawdown_pct:.2f}%" if report.average_max_drawdown_pct is not None else "N/A"
+    print(f"Avg T+7 return: {t7}")
+    print(f"Avg T+30 return: {t30}")
+    print(f"Avg max drawdown: {mdd}")
+    print(f"Outcomes: {', '.join(f'{k}={v}' for k, v in sorted(report.outcomes.items()))}")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    report_path = Path("reports") / f"backtest_{timestamp}.json"
+    PerformanceLogger().write_json_report(report, report_path)
+    print(f"Saved JSON report to: {report_path}")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Neural Investors Lab console test runner")
     parser.add_argument("--live", metavar="TICKER", help="run live Boardroom analysis for a ticker")
     parser.add_argument("--article-url", action="append", default=[], help="article URL for live researcher context")
     parser.add_argument("--no-persist", action="store_true", help="skip PostgreSQL persistence in live mode")
+    parser.add_argument("--backtest-report", action="store_true", help="run backtest on historical predictions and save JSON report")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    if args.backtest_report:
+        run_backtest_report()
+        return
     if args.live:
         run_live_test(args.live.upper(), args.article_url, persist=not args.no_persist)
         return

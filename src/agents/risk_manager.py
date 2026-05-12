@@ -1,6 +1,6 @@
 import logging
 
-from src.agents.json_utils import parse_json_model
+from src.agents.json_utils import extract_json_object, normalize_risk_review
 from src.core.config import Settings, get_settings
 from src.core.llm_client import ChatMessage, OpenRouterClient, get_openrouter_client
 from src.models.agent_schema import RiskReview, StrategyDraft
@@ -30,7 +30,15 @@ class RiskManagerAgent:
         risk_assessment = self.calculate_risk(draft, technicals)
         review = self._review_with_cro(draft, risk_assessment)
         final = self._build_final_synthesis(draft, risk_assessment, review)
-        logger.info("Risk Manager completed for %s with %s", draft.ticker, final.risk_decision)
+        logger.info(
+            "Risk Manager completed for %s: decision=%s, approved_position=%.2f%%, risk_rating=%s, var=%.2f%%, kelly=%.4f",
+            draft.ticker,
+            final.risk_decision,
+            final.position_size_pct,
+            risk_assessment.risk_rating,
+            risk_assessment.value_at_risk_pct,
+            risk_assessment.kelly_fraction,
+        )
         return final
 
     def calculate_risk(self, draft: StrategyDraft, technicals: TechnicalAnalysis | None = None) -> RiskAssessment:
@@ -113,7 +121,9 @@ class RiskManagerAgent:
             use_reasoning=self.settings.cro_model_reasoning,
             temperature=0.1,
         )
-        review = parse_json_model(response.content, RiskReview)
+        payload = extract_json_object(response.content)
+        payload = normalize_risk_review(payload)
+        review = RiskReview.model_validate(payload)
         approved_size = min(review.approved_position_size_pct, risk_assessment.position_size_pct)
         if approved_size != review.approved_position_size_pct:
             review = review.model_copy(update={"approved_position_size_pct": approved_size, "risk_decision": RiskDecision.ADJUSTED})

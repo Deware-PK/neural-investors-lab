@@ -17,6 +17,7 @@ from src.models.fundamental_schema import FundamentalAnalysis
 from src.models.research_schema import ResearchFinding
 from src.models.synthesis_schema import FinalSynthesis
 from src.models.technical_schema import TechnicalAnalysis
+from src.models.vision_schema import VisualChartAnalysis
 from src.services.deep_research import DeepResearchService
 from src.services.finance_api import FinanceAPI
 from src.services.indicator_math import IndicatorMath
@@ -31,6 +32,7 @@ class BoardroomResult:
     fundamentals: FundamentalAnalysis
     technicals: TechnicalAnalysis
     research: ResearchFinding
+    visual_chart_analysis: VisualChartAnalysis
     conflict_assessment: ConflictAssessment
     strategy_draft: StrategyDraft
     final_synthesis: FinalSynthesis
@@ -54,8 +56,8 @@ class BoardroomOrchestrator:
         indicator_math = IndicatorMath()
         deep_research = DeepResearchService(redis_client=redis_client, settings=self.settings)
         self.auditor = auditor or AuditorAgent(finance_api=finance_api, indicator_math=indicator_math)
-        self.chartist = chartist or ChartistAgent(finance_api=finance_api, indicator_math=indicator_math)
-        self.researcher = researcher or ResearcherAgent(deep_research=deep_research, settings=self.settings)
+        self.chartist = chartist or ChartistAgent(finance_api=finance_api, indicator_math=indicator_math, settings=self.settings)
+        self.researcher = researcher or ResearcherAgent(deep_research=deep_research, finance_api=finance_api, settings=self.settings)
         self.chief_strategist = chief_strategist or ChiefStrategistAgent(settings=self.settings)
         self.risk_manager = risk_manager or RiskManagerAgent(settings=self.settings)
         self.session_factory = session_factory
@@ -71,7 +73,13 @@ class BoardroomOrchestrator:
         fundamentals_task = asyncio.to_thread(self.auditor.analyze, symbol)
         technicals_task = asyncio.to_thread(self.chartist.analyze, symbol)
         research_task = asyncio.to_thread(self.researcher.analyze, symbol, article_urls)
-        fundamentals, technicals, research = await asyncio.gather(fundamentals_task, technicals_task, research_task)
+        visual_task = self.chartist.get_visual_analysis(symbol)
+        fundamentals, technicals, research, visual_chart_analysis = await asyncio.gather(
+            fundamentals_task,
+            technicals_task,
+            research_task,
+            visual_task,
+        )
         logger.info("Round 1 agents completed for %s", symbol)
 
         conflict = self.chief_strategist.identify_contradictions(fundamentals, technicals, research)
@@ -93,8 +101,18 @@ class BoardroomOrchestrator:
             technicals,
             final_research,
             conflict,
+            visual_chart_analysis,
         )
-        logger.info("CEO draft completed for %s with action=%s", symbol, draft.action)
+        logger.info(
+            "CEO draft completed for %s: action=%s, conviction=%d, entry=%s, tp=%s, sl=%s, position=%.2f%%",
+            symbol,
+            draft.action,
+            draft.conviction_score,
+            f"{draft.entry_price:.2f}" if draft.entry_price else "N/A",
+            f"{draft.take_profit:.2f}" if draft.take_profit else "N/A",
+            f"{draft.stop_loss:.2f}" if draft.stop_loss else "N/A",
+            draft.proposed_position_size_pct,
+        )
         final = await asyncio.to_thread(self.risk_manager.finalize, draft, technicals)
         logger.info("Final Risk Manager decision for %s: %s", symbol, final.risk_decision)
         record_id = await asyncio.to_thread(self._persist_final_output, symbol, final) if persist else None
@@ -103,6 +121,7 @@ class BoardroomOrchestrator:
             fundamentals=fundamentals,
             technicals=technicals,
             research=final_research,
+            visual_chart_analysis=visual_chart_analysis,
             conflict_assessment=conflict,
             strategy_draft=draft,
             final_synthesis=final,

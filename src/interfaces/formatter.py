@@ -61,6 +61,7 @@ def format_boardroom_result_html(result: BoardroomResult) -> str:
         f"Fundamentals: {escape(', '.join(result.fundamentals.tags) or 'none')}",
         f"Technicals: {escape(', '.join(result.technicals.tags) or 'none')}",
         f"Research: {escape(result.research.sentiment)} ({result.research.sentiment_score:.2f})",
+        f"Visual Chart: {escape(result.visual_chart_analysis.sentiment)} ({result.visual_chart_analysis.confidence_score:.2f})",
     ]
     if conflict.has_conflict:
         sections.extend(["", "<b>Debate Triggered</b>"])

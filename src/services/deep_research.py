@@ -61,7 +61,13 @@ class DeepResearchService:
         return extracted
 
     def extract_articles(self, urls: list[str]) -> list[NewsArticle]:
-        return [self.extract_article(url) for url in urls]
+        articles: list[NewsArticle] = []
+        for url in urls:
+            try:
+                articles.append(self.extract_article(url))
+            except ArticleExtractionError:
+                logger.warning("Failed to extract article from %s - skipping", url)
+        return articles
 
     def _get_cached(self, key: str) -> Any | None:
         if self.redis_client is None:
