@@ -61,7 +61,10 @@ class BacktestEngine:
 
         for ticker, ticker_predictions in by_ticker.items():
             try:
-                bars = self.finance_api.fetch_historical_prices(ticker, period="60d", interval="1d")
+                newest_date = min(p.created_at.date() for p in ticker_predictions)
+                days_needed = (date.today() - newest_date).days + 35
+                period = f"{max(days_needed, 60)}d"
+                bars = self.finance_api.fetch_historical_prices(ticker, period=period, interval="1d")
             except Exception:
                 logger.exception("Failed to fetch history for %s", ticker)
                 continue

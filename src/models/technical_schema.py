@@ -6,6 +6,8 @@ from pydantic import BaseModel, ConfigDict, Field
 TrendState = Literal["bullish", "bearish", "neutral", "mixed"]
 DivergenceState = Literal["bullish_divergence", "bearish_divergence", "none"]
 VolatilityState = Literal["low", "normal", "high", "squeeze", "breakout"]
+TrendlineState = Literal["compressing", "expanding", "parallel", "undefined"]
+PatternSentiment = Literal["bullish", "bearish", "neutral"]
 
 
 class MovingAverageAlignment(BaseModel):
@@ -48,6 +50,30 @@ class VolatilitySignal(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class TrendlineSignal(BaseModel):
+    support_slope: float | None = None
+    support_intercept: float | None = None
+    resistance_slope: float | None = None
+    resistance_intercept: float | None = None
+    support_price: float | None = None
+    resistance_price: float | None = None
+    support_quality: float | None = None
+    resistance_quality: float | None = None
+    state: TrendlineState = "undefined"
+    tag: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class PatternSignal(BaseModel):
+    detected_patterns: list[str] = Field(default_factory=list)
+    primary_pattern: str | None = None
+    pattern_sentiment: PatternSentiment = "neutral"
+    tag: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class TechnicalAnalysis(BaseModel):
     ticker: str = Field(min_length=1, max_length=16)
     close_price: float = Field(gt=0)
@@ -55,6 +81,8 @@ class TechnicalAnalysis(BaseModel):
     momentum: MomentumSignal
     volume: VolumeSignal
     volatility: VolatilitySignal
+    trendline: TrendlineSignal | None = None
+    pattern: PatternSignal | None = None
     support_levels: list[float] = Field(default_factory=list)
     resistance_levels: list[float] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)

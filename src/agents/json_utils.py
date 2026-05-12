@@ -100,8 +100,12 @@ def normalize_strategy_draft(payload: dict[str, Any], ticker: str) -> dict[str, 
     # Fix conflict_assessment: if it's a boolean, convert to None
     elif "conflict_assessment" in payload and isinstance(payload["conflict_assessment"], bool):
         payload["conflict_assessment"] = None
-    # Fix conflict_assessment: add missing ticker field
+    # Fix conflict_assessment: add missing ticker field and strip extra fields
     elif "conflict_assessment" in payload and isinstance(payload["conflict_assessment"], dict):
+        allowed_ca_fields = {"ticker", "has_conflict", "reasons"}
+        payload["conflict_assessment"] = {
+            k: v for k, v in payload["conflict_assessment"].items() if k in allowed_ca_fields
+        }
         if "ticker" not in payload["conflict_assessment"]:
             payload["conflict_assessment"]["ticker"] = ticker
 
@@ -112,10 +116,41 @@ def normalize_visual_chart_analysis(payload: dict[str, Any]) -> dict[str, Any]:
     """Fix common LLM JSON errors in VisualChartAnalysis responses."""
     import re
 
-    # Fix confidence_score: convert 0-100 scale to 0-1 scale
-    if "confidence_score" in payload and isinstance(payload["confidence_score"], (int, float)):
-        if payload["confidence_score"] > 1:
-            payload["confidence_score"] = payload["confidence_score"] / 100
+    # Fix sentiment: lowercase and map common variants
+    if "sentiment" in payload and isinstance(payload["sentiment"], str):
+        raw = payload["sentiment"].strip().lower()
+        sentiment_map = {
+            "bull": "bullish", "positive": "bullish",
+            "bear": "bearish", "negative": "bearish",
+            "neutral": "neutral", "mixed": "mixed",
+            "uncertain": "neutral", "sideways": "neutral",
+        }
+        payload["sentiment"] = sentiment_map.get(raw, raw)
+
+    # Fix confidence_score: convert 0-100 scale to 0-1 scale, and handle string values
+    if "confidence_score" in payload:
+        raw = payload["confidence_score"]
+        if isinstance(raw, str):
+            confidence_map = {
+                "very high": 0.95, "very_high": 0.95,
+                "high": 0.80,
+                "medium": 0.50, "moderate": 0.50,
+                "low": 0.30,
+                "very low": 0.10, "very_low": 0.10,
+                "none": 0.05, "uncertain": 0.20,
+            }
+            payload["confidence_score"] = confidence_map.get(raw.strip().lower(), 0.50)
+        elif isinstance(raw, (int, float)):
+            if raw > 1:
+                payload["confidence_score"] = raw / 100
+
+    # Fix observed_patterns: ensure all items are strings
+    if "observed_patterns" in payload and isinstance(payload["observed_patterns"], list):
+        payload["observed_patterns"] = [str(item) for item in payload["observed_patterns"]]
+
+    # Fix risks: ensure all items are strings
+    if "risks" in payload and isinstance(payload["risks"], list):
+        payload["risks"] = [str(item) for item in payload["risks"]]
 
     # Fix support_zones: extract numbers from strings like "195 - 200"
     if "support_zones" in payload and isinstance(payload["support_zones"], list):
@@ -169,18 +204,20 @@ def normalize_research_finding(payload: dict[str, Any]) -> dict[str, Any]:
         normalized_articles = []
         for item in payload["articles"]:
             if isinstance(item, str):
-                # Convert string to NewsArticle object (use as both title and url)
                 normalized_articles.append({"title": item, "url": item})
             elif isinstance(item, dict):
-                # Strip extra fields not in NewsArticle schema
                 cleaned = {k: v for k, v in item.items() if k in allowed_article_fields}
-                # Ensure title is present
                 if "title" not in cleaned and "url" in cleaned:
                     cleaned["title"] = cleaned["url"]
                 elif "title" not in cleaned:
                     cleaned["title"] = "Unknown"
                 normalized_articles.append(cleaned)
         payload["articles"] = normalized_articles
+
+    # Fix catalysts/concerns: wrap single strings into lists
+    for field in ("catalysts", "concerns"):
+        if field in payload and isinstance(payload[field], str):
+            payload[field] = [payload[field]]
 
     return payload
 
@@ -191,10 +228,12 @@ def normalize_risk_review(payload: dict[str, Any]) -> dict[str, Any]:
     risk_decision_mapping = {
         "approved_with_limit": "adjusted",
         "approved_with_conditions": "adjusted",
+        "approved_with_modification": "adjusted",
         "conditional_approval": "adjusted",
         "approve_with_limit": "adjusted",
         "approved_limited": "adjusted",
         "modified": "adjusted",
+        "modify": "adjusted",
         "adjusted_down": "adjusted",
         "adjusted_up": "adjusted",
         "partially_approved": "adjusted",

@@ -2,13 +2,16 @@ from collections.abc import Iterable
 from typing import Any
 
 import pandas as pd
+import numpy as np
 
 from src.models.fundamental_schema import FundamentalAnalysis, FundamentalSnapshot
 from src.models.market_data_schema import FinancialStatement, PriceBar, TickerProfile
 from src.models.technical_schema import (
     MomentumSignal,
     MovingAverageAlignment,
+    PatternSignal,
     TechnicalAnalysis,
+    TrendlineSignal,
     VolatilitySignal,
     VolumeSignal,
 )
@@ -51,6 +54,9 @@ class IndicatorMath:
         bollinger_state = self._bollinger_state(close)
         support_levels, resistance_levels = self._support_resistance(close)
 
+        trendline = self._fit_trendlines(high, low, close)
+        pattern = self._detect_patterns(frame["open"], high, low, close)
+
         tags = [
             ma_state,
             self._momentum_tag(self._latest(rsi), self._latest(macd_histogram), divergence),
@@ -91,6 +97,8 @@ class IndicatorMath:
             ),
             support_levels=support_levels,
             resistance_levels=resistance_levels,
+            trendline=trendline,
+            pattern=pattern,
             tags=tags,
         )
 
@@ -422,11 +430,197 @@ class IndicatorMath:
         return "volatility:unknown"
 
     @staticmethod
+    def _fit_trendlines(high: pd.Series, low: pd.Series, close: pd.Series) -> TrendlineSignal:
+        n = len(close)
+        if n < 30:
+            return TrendlineSignal(state="undefined")
+        x = np.arange(n)
+        coefs = np.polyfit(x, close.values, 1)
+        line_points = coefs[0] * x + coefs[1]
+        upper_pivot = int((high.values - line_points).argmax())
+        lower_pivot = int((low.values - line_points).argmin())
+
+        try:
+            support_coefs = _optimize_slope(True, lower_pivot, coefs[0], low.values)
+            resist_coefs = _optimize_slope(False, upper_pivot, coefs[0], high.values)
+        except Exception:
+            return TrendlineSignal(state="undefined")
+
+        support_slope, support_intercept = support_coefs
+        resistance_slope, resistance_intercept = resist_coefs
+
+        support_price = float(support_slope * (n - 1) + support_intercept)
+        resistance_price = float(resistance_slope * (n - 1) + resistance_intercept)
+
+        support_err = _check_trend_line(True, lower_pivot, support_slope, low.values)
+        resistance_err = _check_trend_line(False, upper_pivot, resistance_slope, high.values)
+
+        support_quality = float(1.0 / (1.0 + support_err)) if support_err >= 0 else None
+        resistance_quality = float(1.0 / (1.0 + resistance_err)) if resistance_err >= 0 else None
+
+        slope_diff = resistance_slope - support_slope
+        if abs(slope_diff) < abs(support_slope) * 0.15:
+            state = "parallel"
+        elif slope_diff < 0:
+            state = "compressing"
+        else:
+            state = "expanding"
+
+        return TrendlineSignal(
+            support_slope=round(float(support_slope), 6),
+            support_intercept=round(float(support_intercept), 4),
+            resistance_slope=round(float(resistance_slope), 6),
+            resistance_intercept=round(float(resistance_intercept), 4),
+            support_price=round(support_price, 2),
+            resistance_price=round(resistance_price, 2),
+            support_quality=round(support_quality, 4) if support_quality is not None else None,
+            resistance_quality=round(resistance_quality, 4) if resistance_quality is not None else None,
+            state=state,
+            tag=f"trendline:{state}",
+        )
+
+    @staticmethod
+    def _detect_patterns(open_: pd.Series, high: pd.Series, low: pd.Series, close: pd.Series) -> PatternSignal:
+        patterns: list[str] = []
+        bullish_count = 0
+        bearish_count = 0
+
+        body = (close - open_).abs()
+        upper_shadow = high - close.combine(open_, max)
+        lower_shadow = close.combine(open_, min) - low
+        total_range = high - low
+
+        latest_body = body.iloc[-1]
+        latest_upper = upper_shadow.iloc[-1]
+        latest_lower = lower_shadow.iloc[-1]
+        latest_range = total_range.iloc[-1]
+
+        if latest_range > 0:
+            body_ratio = latest_body / latest_range
+        else:
+            body_ratio = 1.0
+
+        if body_ratio < 0.1:
+            patterns.append("doji")
+        elif body_ratio < 0.35 and latest_lower > latest_body * 2 and latest_upper < latest_body * 0.5:
+            patterns.append("hammer")
+            bullish_count += 1
+        elif body_ratio < 0.35 and latest_upper > latest_body * 2 and latest_lower < latest_body * 0.5:
+            patterns.append("shooting_star")
+            bearish_count += 1
+
+        if len(close) >= 2:
+            prev_open = open_.iloc[-2]
+            prev_close = close.iloc[-2]
+            curr_open = open_.iloc[-1]
+            curr_close = close.iloc[-1]
+
+            if prev_close < prev_open and curr_close > curr_open:
+                if curr_close > prev_open and curr_open < prev_close:
+                    patterns.append("bullish_engulfing")
+                    bullish_count += 1
+            elif prev_close > prev_open and curr_close < curr_open:
+                if curr_close < prev_open and curr_open > prev_close:
+                    patterns.append("bearish_engulfing")
+                    bearish_count += 1
+
+            if prev_close < prev_open and curr_close > curr_open:
+                if curr_open < prev_close and curr_close > (prev_open + prev_close) / 2:
+                    patterns.append("piercing_line")
+                    bullish_count += 1
+
+        if len(close) >= 3:
+            first_open = open_.iloc[-3]
+            first_close = close.iloc[-3]
+            second_open = open_.iloc[-2]
+            second_close = close.iloc[-2]
+            curr_open = open_.iloc[-1]
+            curr_close = close.iloc[-1]
+
+            second_body = abs(second_close - second_open)
+            first_body = abs(first_close - first_open)
+            curr_body = abs(curr_close - curr_open)
+
+            if first_close < first_open and curr_close > curr_open:
+                if second_body < first_body * 0.3 and curr_body > first_body * 0.6:
+                    if curr_close > (first_open + first_close) / 2:
+                        patterns.append("morning_star")
+                        bullish_count += 1
+            elif first_close > first_open and curr_close < curr_open:
+                if second_body < first_body * 0.3 and curr_body > first_body * 0.6:
+                    if curr_close < (first_open + first_close) / 2:
+                        patterns.append("evening_star")
+                        bearish_count += 1
+
+        if bullish_count > bearish_count:
+            sentiment = "bullish"
+        elif bearish_count > bullish_count:
+            sentiment = "bearish"
+        else:
+            sentiment = "neutral"
+
+        primary = patterns[0] if patterns else None
+        return PatternSignal(
+            detected_patterns=patterns,
+            primary_pattern=primary,
+            pattern_sentiment=sentiment,
+            tag=f"pattern:{sentiment}",
+        )
+
+    @staticmethod
     def _latest(series: pd.Series) -> float | None:
         cleaned = series.dropna()
         if cleaned.empty:
             return None
         return float(cleaned.iloc[-1])
+
+
+def _check_trend_line(support: bool, pivot: int, slope: float, y: np.ndarray) -> float:
+    intercept = -slope * pivot + y[pivot]
+    line_vals = slope * np.arange(len(y)) + intercept
+    diffs = line_vals - y
+    if support and diffs.max() > 1e-5:
+        return -1.0
+    if not support and diffs.min() < -1e-5:
+        return -1.0
+    return float((diffs ** 2.0).sum())
+
+
+def _optimize_slope(support: bool, pivot: int, init_slope: float, y: np.ndarray) -> tuple[float, float]:
+    slope_unit = (y.max() - y.min()) / len(y)
+    opt_step = 1.0
+    min_step = 0.0001
+    curr_step = opt_step
+    best_slope = init_slope
+    best_err = _check_trend_line(support, pivot, init_slope, y)
+    if best_err < 0:
+        raise ValueError("Initial slope invalid")
+    get_derivative = True
+    derivative = None
+    while curr_step > min_step:
+        if get_derivative:
+            slope_change = best_slope + slope_unit * min_step
+            test_err = _check_trend_line(support, pivot, slope_change, y)
+            derivative = test_err - best_err
+            if test_err < 0.0:
+                slope_change = best_slope - slope_unit * min_step
+                test_err = _check_trend_line(support, pivot, slope_change, y)
+                derivative = best_err - test_err
+            if test_err < 0.0:
+                raise ValueError("Derivative failed")
+            get_derivative = False
+        if derivative > 0.0:
+            test_slope = best_slope - slope_unit * curr_step
+        else:
+            test_slope = best_slope + slope_unit * curr_step
+        test_err = _check_trend_line(support, pivot, test_slope, y)
+        if test_err < 0 or test_err >= best_err:
+            curr_step *= 0.5
+        else:
+            best_err = test_err
+            best_slope = test_slope
+            get_derivative = True
+    return (best_slope, -best_slope * pivot + y[pivot])
 
 
 def _row_values(statement: FinancialStatement, aliases: Iterable[str]) -> list[float | None]:

@@ -14,9 +14,9 @@ from src.services.indicator_math import IndicatorMath
 logger = logging.getLogger(__name__)
 
 MIN_BARS = 200
-COOLDOWN_DAYS = 20
-RSI_MIN = 30
-RSI_MAX = 55
+COOLDOWN_DAYS = 10
+RSI_MIN = 25
+RSI_MAX = 65
 ATR_STOP_MULTIPLIER = 2.0
 ATR_TAKE_PROFIT_MULTIPLIER = 3.0
 DEFAULT_POSITION_SIZE_PCT = 5.0
@@ -115,6 +115,8 @@ class SyntheticSignalGenerator:
             return False
         if analysis.volume.volume_trend != "bullish":
             return False
+        if analysis.pattern is not None and analysis.pattern.pattern_sentiment == "bearish":
+            return False
         return True
 
     @staticmethod
@@ -125,17 +127,27 @@ class SyntheticSignalGenerator:
         supports = analysis.support_levels
         resistances = analysis.resistance_levels
 
+        trendline_support = None
+        trendline_resistance = None
+        if analysis.trendline is not None:
+            trendline_support = analysis.trendline.support_price
+            trendline_resistance = analysis.trendline.resistance_price
+
         atr_stop = entry_price - ATR_STOP_MULTIPLIER * atr
+        stop_candidates = [atr_stop]
+        if trendline_support is not None:
+            stop_candidates.append(trendline_support)
         if supports:
-            stop_loss = round(max(supports[0], atr_stop), 2)
-        else:
-            stop_loss = round(atr_stop, 2)
+            stop_candidates.append(supports[0])
+        stop_loss = round(max(stop_candidates), 2)
 
         atr_tp = entry_price + ATR_TAKE_PROFIT_MULTIPLIER * atr
+        tp_candidates = [atr_tp]
+        if trendline_resistance is not None:
+            tp_candidates.append(trendline_resistance)
         if resistances:
-            take_profit = round(min(resistances[0], atr_tp), 2)
-        else:
-            take_profit = round(atr_tp, 2)
+            tp_candidates.append(resistances[0])
+        take_profit = round(min(tp_candidates), 2)
 
         conviction = SyntheticSignalGenerator._compute_conviction(analysis)
 
@@ -177,6 +189,19 @@ class SyntheticSignalGenerator:
             score += 25
         if analysis.volume.volume_trend == "bullish":
             score += 20
+
+        if analysis.trendline is not None:
+            if analysis.trendline.state in ("compressing", "parallel"):
+                score += 10
+            if analysis.trendline.support_quality is not None and analysis.trendline.support_quality > 0.5:
+                score += 5
+
+        if analysis.pattern is not None:
+            if analysis.pattern.pattern_sentiment == "bullish":
+                score += 10
+            elif analysis.pattern.pattern_sentiment == "neutral" and not analysis.pattern.detected_patterns:
+                score -= 5
+
         return min(100, max(0, score))
 
     @staticmethod
@@ -185,8 +210,15 @@ class SyntheticSignalGenerator:
             f"Synthetic BUY signal on {analysis.ticker} @ ${entry:.2f}.",
             f"MA alignment is {analysis.moving_average.state} (close > MA50 > MA100 > MA200).",
             f"RSI={analysis.momentum.rsi:.1f}, MACD histogram={analysis.momentum.macd_histogram:.4f}, volume trend={analysis.volume.volume_trend}.",
-            f"Stop-loss: ${stop:.2f} (ATR-based), Take-profit: ${tp:.2f}.",
         ]
+        if analysis.trendline is not None and analysis.trendline.state != "undefined":
+            parts.append(
+                f"Trendlines: {analysis.trendline.state} "
+                f"(support=${analysis.trendline.support_price:.2f}, resistance=${analysis.trendline.resistance_price:.2f})."
+            )
+        if analysis.pattern is not None and analysis.pattern.detected_patterns:
+            parts.append(f"Patterns: {', '.join(analysis.pattern.detected_patterns)} ({analysis.pattern.pattern_sentiment}).")
+        parts.append(f"Stop-loss: ${stop:.2f}, Take-profit: ${tp:.2f}.")
         return " ".join(parts)
 
     @staticmethod
@@ -198,6 +230,10 @@ class SyntheticSignalGenerator:
             risks.append(f"Bollinger state is {analysis.volatility.bollinger_state} — elevated volatility risk")
         if analysis.volatility.historical_volatility is not None and analysis.volatility.historical_volatility >= 50:
             risks.append(f"High historical volatility: {analysis.volatility.historical_volatility:.1f}%")
+        if analysis.trendline is not None and analysis.trendline.state == "expanding":
+            risks.append("Trendlines are expanding — widening range increases whipsaw risk")
+        if analysis.pattern is not None and analysis.pattern.pattern_sentiment == "bearish":
+            risks.append(f"Bearish candlestick patterns detected: {', '.join(analysis.pattern.detected_patterns)}")
         if not risks:
             risks.append("Standard market risk — no elevated technical warnings detected")
         return risks

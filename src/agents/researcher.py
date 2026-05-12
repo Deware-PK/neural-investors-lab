@@ -30,7 +30,7 @@ class ResearcherAgent:
         articles = self.deep_research.extract_articles(article_urls) if article_urls else self.finance_api.fetch_ticker_news(symbol)
         logger.info("Researcher fetched %d articles for %s", len(articles), symbol)
         if articles:
-            for i, article in enumerate(articles[:5], 1):
+            for i, article in enumerate(articles, 1):
                 logger.info("Researcher article %d/%d for %s: %s", i, len(articles), symbol, article.title)
         finding = self._generate_research_finding(symbol, articles, context)
         logger.info(
