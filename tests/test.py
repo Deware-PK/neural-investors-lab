@@ -218,14 +218,19 @@ def run_live_test(ticker: str, article_urls: list[str], persist: bool) -> None:
     print(format_boardroom_result_html(result))
 
 
-def run_synthetic_backtest_generation(ticker: str) -> None:
+def run_synthetic_backtest_generation(tickers: list[str]) -> None:
     settings = get_settings()
     configure_logging(settings.log_level)
     generator = SyntheticSignalGenerator()
-    count = generator.generate(ticker.upper())
-    print(f"\nSynthetic signals generated for {ticker.upper()}: {count}")
-    if count > 0:
-        print("Running backtest on all data (real + synthetic)...")
+    total = 0
+    for ticker in tickers:
+        symbol = ticker.upper()
+        count = generator.generate(symbol)
+        print(f"Synthetic signals generated for {symbol}: {count}")
+        total += count
+    print(f"\nTotal signals generated across {len(tickers)} tickers: {total}")
+    if total > 0:
+        print("Running backtest on all data...")
         run_backtest_report()
 
 
@@ -257,7 +262,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--article-url", action="append", default=[], help="article URL for live researcher context")
     parser.add_argument("--no-persist", action="store_true", help="skip PostgreSQL persistence in live mode")
     parser.add_argument("--backtest-report", action="store_true", help="run backtest on historical predictions and save JSON report")
-    parser.add_argument("--generate-synthetic-backtest", metavar="TICKER", help="generate synthetic historical signals for a ticker then backtest")
+    parser.add_argument("--generate-synthetic-backtest", metavar="TICKER", nargs="+", help="generate synthetic historical signals for one or more tickers then backtest")
     return parser.parse_args()
 
 

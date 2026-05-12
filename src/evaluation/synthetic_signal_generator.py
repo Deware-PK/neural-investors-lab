@@ -17,8 +17,10 @@ MIN_BARS = 200
 COOLDOWN_DAYS = 10
 RSI_MIN = 25
 RSI_MAX = 65
-ATR_STOP_MULTIPLIER = 2.0
+ATR_STOP_MULTIPLIER = 1.5
 ATR_TAKE_PROFIT_MULTIPLIER = 3.0
+MIN_RR_RATIO = 1.5
+MIN_UPSIDE_PCT = 0.04
 DEFAULT_POSITION_SIZE_PCT = 5.0
 
 
@@ -73,6 +75,8 @@ class SyntheticSignalGenerator:
                     continue
 
                 synthesis = self._build_synthesis(symbol, analysis, signal_date)
+                if synthesis is None:
+                    continue
                 output = synthesis.model_dump(mode="json")
                 created_dt = datetime(signal_date.year, signal_date.month, signal_date.day, tzinfo=UTC)
                 persist_analysis_output(
@@ -120,7 +124,7 @@ class SyntheticSignalGenerator:
         return True
 
     @staticmethod
-    def _build_synthesis(ticker: str, analysis: TechnicalAnalysis, signal_date: datetime.date) -> FinalSynthesis:
+    def _build_synthesis(ticker: str, analysis: TechnicalAnalysis, signal_date: datetime.date) -> FinalSynthesis | None:
         entry_price = analysis.close_price
         atr = analysis.volatility.atr or (entry_price * 0.02)
 
@@ -133,21 +137,27 @@ class SyntheticSignalGenerator:
             trendline_support = analysis.trendline.support_price
             trendline_resistance = analysis.trendline.resistance_price
 
-        atr_stop = entry_price - ATR_STOP_MULTIPLIER * atr
-        stop_candidates = [atr_stop]
+        base_sl = entry_price - ATR_STOP_MULTIPLIER * atr
+        sl_candidates = [base_sl]
         if trendline_support is not None:
-            stop_candidates.append(trendline_support)
+            sl_candidates.append(trendline_support)
         if supports:
-            stop_candidates.append(supports[0])
-        stop_loss = round(max(stop_candidates), 2)
+            sl_candidates.append(supports[0])
+        stop_loss = round(max(sl_candidates), 2)
 
-        atr_tp = entry_price + ATR_TAKE_PROFIT_MULTIPLIER * atr
-        tp_candidates = [atr_tp]
-        if trendline_resistance is not None:
-            tp_candidates.append(trendline_resistance)
-        if resistances:
-            tp_candidates.append(resistances[0])
-        take_profit = round(min(tp_candidates), 2)
+        risk_amount = entry_price - stop_loss
+        min_required_tp = entry_price + (risk_amount * MIN_RR_RATIO)
+        base_tp = entry_price + (ATR_TAKE_PROFIT_MULTIPLIER * atr)
+        take_profit = round(max(min_required_tp, base_tp), 2)
+
+        if trendline_resistance is not None and trendline_resistance > take_profit:
+            take_profit = round(trendline_resistance, 2)
+        if resistances and resistances[0] > take_profit:
+            take_profit = round(resistances[0], 2)
+
+        upside_pct = (take_profit - entry_price) / entry_price
+        if upside_pct < MIN_UPSIDE_PCT:
+            return None
 
         conviction = SyntheticSignalGenerator._compute_conviction(analysis)
 
@@ -206,10 +216,14 @@ class SyntheticSignalGenerator:
 
     @staticmethod
     def _build_thesis(analysis: TechnicalAnalysis, entry: float, stop: float, tp: float) -> str:
+        risk = entry - stop
+        reward = tp - entry
+        rr = reward / risk if risk > 0 else 0
         parts = [
             f"Synthetic BUY signal on {analysis.ticker} @ ${entry:.2f}.",
             f"MA alignment is {analysis.moving_average.state} (close > MA50 > MA100 > MA200).",
             f"RSI={analysis.momentum.rsi:.1f}, MACD histogram={analysis.momentum.macd_histogram:.4f}, volume trend={analysis.volume.volume_trend}.",
+            f"R:R = 1:{rr:.1f} (risk=${risk:.2f}, reward=${reward:.2f}).",
         ]
         if analysis.trendline is not None and analysis.trendline.state != "undefined":
             parts.append(
