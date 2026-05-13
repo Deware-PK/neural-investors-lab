@@ -37,8 +37,16 @@ class ChartistAgent:
         logger.info("Chartist started for %s", symbol)
         history = self.finance_api.fetch_historical_prices(symbol, period=period, interval=interval)
         result = self.indicator_math.analyze_technical(symbol, history)
+        try:
+            mtf_bars = self.finance_api.fetch_multi_timeframe(symbol)
+            mtf = self.indicator_math.analyze_multi_timeframe(
+                mtf_bars["weekly"], mtf_bars["monthly"], result.close_price
+            )
+            result = result.model_copy(update={"multi_timeframe": mtf})
+        except Exception:
+            logger.warning("Multi-timeframe analysis failed for %s", symbol)
         logger.info(
-            "Chartist completed for %s: close=%.2f, trend=%s, rsi=%s, momentum=%s, volume=%s, volatility=%s, support=%s, resistance=%s",
+            "Chartist completed for %s: close=%.2f, trend=%s, rsi=%s, momentum=%s, volume=%s, volatility=%s, support=%s, resistance=%s, mtf=%s",
             symbol,
             result.close_price,
             result.moving_average.state,
@@ -48,6 +56,7 @@ class ChartistAgent:
             result.volatility.bollinger_state,
             result.support_levels[:3] if result.support_levels else [],
             result.resistance_levels[:3] if result.resistance_levels else [],
+            result.multi_timeframe.confluence_tag if result.multi_timeframe else "N/A",
         )
         return result
 

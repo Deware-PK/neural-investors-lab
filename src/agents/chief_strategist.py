@@ -6,6 +6,7 @@ from src.core.config import Settings, get_settings
 from src.core.llm_client import ChatMessage, OpenRouterClient, get_openrouter_client
 from src.models.agent_schema import ConflictAssessment, StrategyDraft
 from src.models.fundamental_schema import FundamentalAnalysis
+from src.models.macro_schema import MacroContext, OptionsFlow
 from src.models.research_schema import ResearchFinding
 from src.models.synthesis_schema import Action
 from src.models.technical_schema import TechnicalAnalysis
@@ -59,13 +60,18 @@ class ChiefStrategistAgent:
         technicals: TechnicalAnalysis,
         research: ResearchFinding,
         visual_chart_analysis: VisualChartAnalysis | None = None,
+        macro_context: MacroContext | None = None,
+        options_flow: OptionsFlow | None = None,
     ) -> StrategyDraft:
         conflict = self.identify_contradictions(fundamentals, technicals, research)
         final_research = research
         if conflict.has_conflict and self.researcher is not None and conflict.deep_dive_query is not None:
             logger.info("CEO triggered debate deep-dive for %s", fundamentals.ticker)
             final_research = self.researcher.investigate_conflict(fundamentals.ticker, conflict.deep_dive_query)
-        return self._generate_strategy(fundamentals, technicals, final_research, conflict, visual_chart_analysis)
+        return self._generate_strategy(
+            fundamentals, technicals, final_research, conflict,
+            visual_chart_analysis, macro_context, options_flow
+        )
 
     def draft_strategy_with_assessment(
         self,
@@ -74,8 +80,13 @@ class ChiefStrategistAgent:
         research: ResearchFinding,
         conflict: ConflictAssessment,
         visual_chart_analysis: VisualChartAnalysis | None = None,
+        macro_context: MacroContext | None = None,
+        options_flow: OptionsFlow | None = None,
     ) -> StrategyDraft:
-        return self._generate_strategy(fundamentals, technicals, research, conflict, visual_chart_analysis)
+        return self._generate_strategy(
+            fundamentals, technicals, research, conflict,
+            visual_chart_analysis, macro_context, options_flow
+        )
 
     def _generate_strategy(
         self,
@@ -84,6 +95,8 @@ class ChiefStrategistAgent:
         research: ResearchFinding,
         conflict: ConflictAssessment,
         visual_chart_analysis: VisualChartAnalysis | None = None,
+        macro_context: MacroContext | None = None,
+        options_flow: OptionsFlow | None = None,
     ) -> StrategyDraft:
         client = self.llm_client or get_openrouter_client(self.settings)
         messages = [
@@ -97,7 +110,8 @@ class ChiefStrategistAgent:
                     "2. Do not invent numeric metrics; rely entirely on the provided Python calculations. "
                     "3. If 'ConflictAssessment' flags a contradiction (e.g., Bearish news vs Bullish technicals), you MUST address it in your 'thesis' and reflect the uncertainty by lowering the 'conviction_score' or changing the action to HOLD. "
                     "4. For BUY/ACCUMULATE actions, strictly set 'entry_price', 'take_profit' (targeting a realistic 1.5x - 2.0x ATR), and 'stop_loss' using the provided technical support/resistance levels. "
-                    "5. Your 'thesis' must be a ruthless, logical deduction explaining EXACTLY why the reward-to-risk ratio justifies the trade in the current market context."
+                    "5. MacroContext is the GLOBAL backdrop — a bear market regime or extreme VIX must lower conviction regardless of individual stock signals. "
+                    "6. Your 'thesis' must be a ruthless, logical deduction explaining EXACTLY why the reward-to-risk ratio justifies the trade in the current market context."
                 ),
             ),
             ChatMessage(
@@ -108,6 +122,8 @@ class ChiefStrategistAgent:
                     f"Research: {research.model_dump(mode='json')}\n"
                     f"VisualChartAnalysis: {visual_chart_analysis.model_dump(mode='json') if visual_chart_analysis else None}\n"
                     f"ConflictAssessment: {conflict.model_dump(mode='json')}\n"
+                    f"MacroContext: {macro_context.model_dump(mode='json') if macro_context else None}\n"
+                    f"OptionsFlow: {options_flow.model_dump(mode='json') if options_flow else None}\n"
                     "Return JSON fields: ticker, action, conviction_score, entry_price, take_profit, stop_loss, "
                     "proposed_position_size_pct, thesis, key_risks, evidence, conflict_assessment."
                 ),

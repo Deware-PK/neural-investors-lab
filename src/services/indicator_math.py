@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np
 
 from src.models.fundamental_schema import FundamentalAnalysis, FundamentalSnapshot
+from src.models.macro_schema import MultiTimeframeConfluence
 from src.models.market_data_schema import FinancialStatement, PriceBar, TickerProfile
 from src.models.technical_schema import (
     MomentumSignal,
@@ -100,6 +101,62 @@ class IndicatorMath:
             trendline=trendline,
             pattern=pattern,
             tags=tags,
+        )
+
+    def analyze_multi_timeframe(
+        self,
+        weekly_bars: list[PriceBar],
+        monthly_bars: list[PriceBar],
+        daily_close: float,
+    ) -> MultiTimeframeConfluence:
+        weekly_frame = self.normalize_price_frame(weekly_bars)
+        monthly_frame = self.normalize_price_frame(monthly_bars)
+
+        weekly_trend = None
+        weekly_close_vs_ma20 = None
+        if not weekly_frame.empty and len(weekly_frame) >= 20:
+            weekly_close = weekly_frame["close"]
+            weekly_ma20 = float(weekly_close.rolling(20).mean().iloc[-1])
+            latest_weekly = float(weekly_close.iloc[-1])
+            weekly_close_vs_ma20 = "above" if latest_weekly > weekly_ma20 else "below"
+            if latest_weekly > weekly_ma20 * 1.02:
+                weekly_trend = "bullish"
+            elif latest_weekly < weekly_ma20 * 0.98:
+                weekly_trend = "bearish"
+            else:
+                weekly_trend = "neutral"
+
+        monthly_trend = None
+        monthly_close_vs_ma20 = None
+        if not monthly_frame.empty and len(monthly_frame) >= 20:
+            monthly_close = monthly_frame["close"]
+            monthly_ma20 = float(monthly_close.rolling(20).mean().iloc[-1])
+            latest_monthly = float(monthly_close.iloc[-1])
+            monthly_close_vs_ma20 = "above" if latest_monthly > monthly_ma20 else "below"
+            if latest_monthly > monthly_ma20 * 1.02:
+                monthly_trend = "bullish"
+            elif latest_monthly < monthly_ma20 * 0.98:
+                monthly_trend = "bearish"
+            else:
+                monthly_trend = "neutral"
+
+        confluence_tag = "insufficient_data"
+        if weekly_trend and monthly_trend:
+            if weekly_trend == monthly_trend:
+                confluence_tag = f"aligned_{weekly_trend}"
+            else:
+                confluence_tag = "conflicting"
+        elif weekly_trend:
+            confluence_tag = f"aligned_{weekly_trend}"
+        elif monthly_trend:
+            confluence_tag = f"aligned_{monthly_trend}"
+
+        return MultiTimeframeConfluence(
+            weekly_trend=weekly_trend,
+            monthly_trend=monthly_trend,
+            weekly_close_vs_ma20=weekly_close_vs_ma20,
+            monthly_close_vs_ma20=monthly_close_vs_ma20,
+            confluence_tag=confluence_tag,
         )
 
     def analyze_fundamentals(

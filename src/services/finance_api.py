@@ -11,6 +11,7 @@ from redis import Redis
 from src.core.config import Settings, get_settings
 from src.core.db_redis import get_json_cache, set_json_cache
 from src.models.market_data_schema import FinanceBundle, FinancialStatement, PriceBar, TickerProfile
+from src.models.macro_schema import MacroContext, OptionsFlow
 from src.models.research_schema import NewsArticle
 
 
@@ -19,6 +20,8 @@ HISTORY_TTL_SECONDS = 60 * 15
 STATEMENT_TTL_SECONDS = 60 * 60 * 24
 BUNDLE_TTL_SECONDS = 60 * 15
 NEWS_TTL_SECONDS = 60 * 15
+MACRO_TTL_SECONDS = 60 * 60 * 4
+OPTIONS_TTL_SECONDS = 60 * 30
 
 logger = logging.getLogger(__name__)
 _FINANCE_FETCH_LOCK = Lock()
@@ -134,6 +137,198 @@ class FinanceAPI:
                 articles.append(article)
         self._set_cached(cache_key, [article.model_dump(mode="json") for article in articles], NEWS_TTL_SECONDS)
         return articles
+
+    def fetch_macro_context(self) -> MacroContext:
+        cache_key = "finance:macro:snapshot"
+        cached = self._get_cached(cache_key)
+        if cached is not None:
+            return MacroContext.model_validate(cached)
+
+        MACRO_TICKERS = {
+            "vix": "^VIX",
+            "yield_10y": "^TNX",
+            "yield_5y": "^FVX",
+            "yield_2y": "^IRX",
+            "dxy": "DX-Y.NYB",
+            "sp500": "^GSPC",
+        }
+
+        latest: dict[str, float | None] = {}
+        histories: dict[str, list] = {}
+
+        for key, symbol in MACRO_TICKERS.items():
+            try:
+                self._throttle_external_fetch(f"macro:{symbol}")
+                ticker_obj = yf.Ticker(symbol)
+                hist = ticker_obj.history(period="3mo", interval="1d")
+                if not hist.empty:
+                    latest[key] = float(hist["Close"].iloc[-1])
+                    histories[key] = hist["Close"].tolist()
+                else:
+                    latest[key] = None
+                    histories[key] = []
+            except Exception:
+                logger.warning("Failed to fetch macro ticker %s", symbol)
+                latest[key] = None
+                histories[key] = []
+
+        spread = None
+        inverted = None
+        if latest.get("yield_10y") and latest.get("yield_2y"):
+            spread = latest["yield_10y"] - latest["yield_2y"]
+            inverted = spread < 0
+
+        vix_val = latest.get("vix")
+        vix_regime = None
+        if vix_val is not None:
+            if vix_val < 15:
+                vix_regime = "low"
+            elif vix_val < 25:
+                vix_regime = "normal"
+            elif vix_val < 35:
+                vix_regime = "elevated"
+            else:
+                vix_regime = "extreme"
+
+        dxy_trend = None
+        dxy_hist = histories.get("dxy", [])
+        if len(dxy_hist) >= 20 and latest.get("dxy"):
+            ma20 = sum(dxy_hist[-20:]) / 20
+            dxy_trend = "strengthening" if latest["dxy"] > ma20 else "weakening"
+
+        sp500_above_200ma = None
+        market_regime = None
+        sp500_hist = histories.get("sp500", [])
+        if len(sp500_hist) >= 60 and latest.get("sp500"):
+            ma60 = sum(sp500_hist[-60:]) / 60
+            sp500_above_200ma = latest["sp500"] > ma60
+            if sp500_above_200ma:
+                market_regime = "bull"
+            else:
+                pct_diff = abs(latest["sp500"] - ma60) / ma60
+                market_regime = "bear" if pct_diff > 0.05 else "sideways"
+        elif latest.get("sp500"):
+            market_regime = "unknown"
+
+        summary_parts = []
+        if vix_regime:
+            summary_parts.append(f"Market volatility is {vix_regime} (VIX={vix_val:.1f})" if vix_val else f"VIX regime: {vix_regime}")
+        if inverted is not None:
+            summary_parts.append(f"Yield curve is {'INVERTED (recession warning)' if inverted else 'normal'} (spread={spread:.2f}%)" if spread else "Yield curve data available")
+        if market_regime:
+            summary_parts.append(f"S&P 500 is in a {market_regime} market regime")
+        if dxy_trend:
+            summary_parts.append(f"US Dollar is {dxy_trend}")
+        macro_summary = ". ".join(summary_parts) + "." if summary_parts else None
+
+        context = MacroContext(
+            vix=latest.get("vix"),
+            vix_regime=vix_regime,
+            yield_10y=latest.get("yield_10y"),
+            yield_5y=latest.get("yield_5y"),
+            yield_2y=latest.get("yield_2y"),
+            yield_curve_spread=spread,
+            yield_curve_inverted=inverted,
+            dxy=latest.get("dxy"),
+            dxy_trend=dxy_trend,
+            sp500_price=latest.get("sp500"),
+            sp500_above_200ma=sp500_above_200ma,
+            market_regime=market_regime,
+            macro_summary=macro_summary,
+        )
+        self._set_cached(cache_key, context.model_dump(mode="json"), MACRO_TTL_SECONDS)
+        return context
+
+    def fetch_options_flow(self, ticker: str) -> OptionsFlow:
+        symbol = ticker.upper()
+        cache_key = f"finance:options:{symbol}"
+        cached = self._get_cached(cache_key)
+        if cached is not None:
+            return OptionsFlow.model_validate(cached)
+
+        try:
+            self._throttle_external_fetch(f"options:{symbol}")
+            t = yf.Ticker(symbol)
+            expiries = t.options
+            if not expiries:
+                flow = OptionsFlow(ticker=symbol)
+                self._set_cached(cache_key, flow.model_dump(mode="json"), OPTIONS_TTL_SECONDS)
+                return flow
+
+            nearest_expiry = expiries[0]
+            chain = t.option_chain(nearest_expiry)
+            calls = chain.calls
+            puts = chain.puts
+
+            total_call_oi = int(calls["openInterest"].sum()) if "openInterest" in calls.columns else 0
+            total_put_oi = int(puts["openInterest"].sum()) if "openInterest" in puts.columns else 0
+
+            pc_ratio = total_put_oi / total_call_oi if total_call_oi > 0 else None
+            options_sentiment = None
+            if pc_ratio is not None:
+                if pc_ratio < 0.7:
+                    options_sentiment = "bullish"
+                elif pc_ratio > 1.2:
+                    options_sentiment = "bearish"
+                else:
+                    options_sentiment = "neutral"
+
+            max_pain = self._calculate_max_pain(calls, puts)
+
+            flow = OptionsFlow(
+                ticker=symbol,
+                nearest_expiry=nearest_expiry,
+                put_call_ratio=round(pc_ratio, 3) if pc_ratio else None,
+                options_sentiment=options_sentiment,
+                total_call_oi=total_call_oi,
+                total_put_oi=total_put_oi,
+                max_pain=max_pain,
+            )
+        except Exception:
+            logger.warning("Failed to fetch options flow for %s", symbol)
+            flow = OptionsFlow(ticker=symbol)
+
+        self._set_cached(cache_key, flow.model_dump(mode="json"), OPTIONS_TTL_SECONDS)
+        return flow
+
+    def fetch_multi_timeframe(self, ticker: str) -> dict[str, list]:
+        symbol = ticker.upper()
+        return {
+            "weekly": self.fetch_historical_prices(symbol, period="2y", interval="1wk"),
+            "monthly": self.fetch_historical_prices(symbol, period="5y", interval="1mo"),
+        }
+
+    @staticmethod
+    def _calculate_max_pain(calls, puts) -> float | None:
+        try:
+            all_strikes = set(
+                calls["strike"].dropna().tolist() + puts["strike"].dropna().tolist()
+            )
+            if not all_strikes:
+                return None
+
+            min_pain = float("inf")
+            max_pain_price = None
+
+            for test_price in all_strikes:
+                call_pain = sum(
+                    max(0, test_price - s) * int(oi)
+                    for s, oi in zip(calls["strike"], calls["openInterest"])
+                    if pd.notna(s) and pd.notna(oi)
+                )
+                put_pain = sum(
+                    max(0, s - test_price) * int(oi)
+                    for s, oi in zip(puts["strike"], puts["openInterest"])
+                    if pd.notna(s) and pd.notna(oi)
+                )
+                total_pain = call_pain + put_pain
+                if total_pain < min_pain:
+                    min_pain = total_pain
+                    max_pain_price = test_price
+
+            return float(max_pain_price) if max_pain_price else None
+        except Exception:
+            return None
 
     @staticmethod
     def price_frame_to_bars(frame: pd.DataFrame) -> list[PriceBar]:

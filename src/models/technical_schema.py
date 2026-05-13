@@ -2,6 +2,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.models.macro_schema import MultiTimeframeConfluence
+
 
 TrendState = Literal["bullish", "bearish", "neutral", "mixed"]
 DivergenceState = Literal["bullish_divergence", "bearish_divergence", "none"]
@@ -85,6 +87,7 @@ class TechnicalAnalysis(BaseModel):
     pattern: PatternSignal | None = None
     support_levels: list[float] = Field(default_factory=list)
     resistance_levels: list[float] = Field(default_factory=list)
+    multi_timeframe: MultiTimeframeConfluence | None = None
     tags: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")

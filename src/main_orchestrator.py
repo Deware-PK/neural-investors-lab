@@ -14,6 +14,7 @@ from src.core.db_postgres import create_session_factory, initialize_database, pe
 from src.core.db_redis import create_optional_redis_client
 from src.models.agent_schema import ConflictAssessment, StrategyDraft
 from src.models.fundamental_schema import FundamentalAnalysis
+from src.models.macro_schema import MacroContext, OptionsFlow
 from src.models.research_schema import ResearchFinding
 from src.models.synthesis_schema import FinalSynthesis
 from src.models.technical_schema import TechnicalAnalysis
@@ -36,6 +37,8 @@ class BoardroomResult:
     conflict_assessment: ConflictAssessment
     strategy_draft: StrategyDraft
     final_synthesis: FinalSynthesis
+    macro_context: MacroContext | None = None
+    options_flow: OptionsFlow | None = None
     persisted_record_id: str | None = None
 
 
@@ -60,6 +63,7 @@ class BoardroomOrchestrator:
         self.researcher = researcher or ResearcherAgent(deep_research=deep_research, finance_api=finance_api, settings=self.settings)
         self.chief_strategist = chief_strategist or ChiefStrategistAgent(settings=self.settings)
         self.risk_manager = risk_manager or RiskManagerAgent(settings=self.settings)
+        self.finance_api = finance_api
         self.session_factory = session_factory
 
     async def analyze_ticker(
@@ -74,13 +78,17 @@ class BoardroomOrchestrator:
         technicals_task = asyncio.to_thread(self.chartist.analyze, symbol)
         research_task = asyncio.to_thread(self.researcher.analyze, symbol, article_urls)
         visual_task = self.chartist.get_visual_analysis(symbol)
-        fundamentals, technicals, research, visual_chart_analysis = await asyncio.gather(
+        macro_task = asyncio.to_thread(self.finance_api.fetch_macro_context)
+        options_task = asyncio.to_thread(self.finance_api.fetch_options_flow, symbol)
+        fundamentals, technicals, research, visual_chart_analysis, macro_context, options_flow = await asyncio.gather(
             fundamentals_task,
             technicals_task,
             research_task,
             visual_task,
+            macro_task,
+            options_task,
         )
-        logger.info("Round 1 agents completed for %s", symbol)
+        logger.info("Round 1 agents completed for %s (macro + options included)", symbol)
 
         conflict = self.chief_strategist.identify_contradictions(fundamentals, technicals, research)
         final_research = research
@@ -102,6 +110,8 @@ class BoardroomOrchestrator:
             final_research,
             conflict,
             visual_chart_analysis,
+            macro_context,
+            options_flow,
         )
         logger.info(
             "CEO draft completed for %s: action=%s, conviction=%d, entry=%s, tp=%s, sl=%s, position=%.2f%%",
@@ -125,6 +135,8 @@ class BoardroomOrchestrator:
             conflict_assessment=conflict,
             strategy_draft=draft,
             final_synthesis=final,
+            macro_context=macro_context,
+            options_flow=options_flow,
             persisted_record_id=record_id,
         )
 
