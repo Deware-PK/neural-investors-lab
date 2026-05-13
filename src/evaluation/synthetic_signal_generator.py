@@ -17,10 +17,10 @@ MIN_BARS = 200
 COOLDOWN_DAYS = 10
 RSI_MIN = 25
 RSI_MAX = 65
-ATR_STOP_MULTIPLIER = 2.0
+ATR_STOP_MULTIPLIER = 1.5
 ATR_TAKE_PROFIT_MULTIPLIER = 3.0
-MIN_RR_RATIO = 1.25
-MIN_UPSIDE_PCT = 0.03
+MIN_RR_RATIO = 1.0
+MIN_UPSIDE_PCT = 0.025
 DEFAULT_POSITION_SIZE_PCT = 5.0
 
 
@@ -147,22 +147,18 @@ class SyntheticSignalGenerator:
 
         risk_amount = entry_price - stop_loss
 
-        atr_tp = entry_price + (ATR_TAKE_PROFIT_MULTIPLIER * atr)
+        atr_tp = entry_price + (1.75 * atr)
         natural_tp = None
         if trendline_resistance is not None:
             natural_tp = trendline_resistance
         elif resistances:
             natural_tp = resistances[0]
 
-        if natural_tp is not None:
-            natural_reward = natural_tp - entry_price
-            natural_rr = natural_reward / risk_amount if risk_amount > 0 else 0
-            if natural_rr < MIN_RR_RATIO:
-                take_profit = round(atr_tp, 2)
-            else:
-                take_profit = round(natural_tp, 2)
-        else:
-            take_profit = round(atr_tp, 2)
+        take_profit = round(atr_tp, 2)
+        if natural_tp is not None and natural_tp > entry_price:
+            natural_rr = (natural_tp - entry_price) / risk_amount if risk_amount > 0 else 0
+            if natural_rr >= MIN_RR_RATIO:
+                take_profit = round(min(atr_tp, natural_tp), 2)
 
         reward_amount = take_profit - entry_price
         rr_ratio = reward_amount / risk_amount if risk_amount > 0 else 0
