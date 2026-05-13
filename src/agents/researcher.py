@@ -31,7 +31,7 @@ class ResearcherAgent:
         logger.info("Researcher fetched %d articles for %s", len(articles), symbol)
         if articles:
             for i, article in enumerate(articles, 1):
-                logger.info("Researcher article %d/%d for %s: %s", i, len(articles), symbol, article.title)
+                logger.info("Researcher article %d/%d for %s: %s", i, len(articles), symbol, article.title.encode("ascii", errors="replace").decode("ascii"))
         finding = self._generate_research_finding(symbol, articles, context)
         logger.info(
             "Researcher completed for %s: sentiment=%s, score=%.2f, catalysts=%d, concerns=%d",
@@ -58,13 +58,14 @@ class ResearcherAgent:
             ChatMessage(
                 role="system",
                 content=(
-                    "You are a Senior Financial News Analyst. Analyze the provided news headlines and snippets. "
-                    "Evaluate overall sentiment and identify potential market catalysts or risks. "
-                    "If only headlines are provided, perform a surface-level sentiment scan. "
-                    "Return only strict JSON matching: ticker, sentiment, sentiment_score, summary, catalysts, concerns, articles. "
-                    "Use bullish, bearish, neutral, or mixed for sentiment. Do not calculate financial metrics. "
-                    "Each article object must ONLY contain: title, url, source, published_at, extracted_text. "
-                    "Do NOT add sentiment, sentiment_contribution, or any other extra fields to articles."
+                    "You are a Senior Quantitative News Analyst. Your job is to filter out market noise and identify true actionable catalysts from the provided news snippets. "
+                    "RULES: "
+                    "1. Return ONLY strict JSON matching the ResearchFinding schema. "
+                    "2. Evaluate sentiment strictly based on potential short-term price impact. Ignore generic corporate PR. "
+                    "3. In 'catalysts', list ONLY concrete events (e.g., M&A, earnings beats, regulatory approvals, institutional flow). "
+                    "4. In 'concerns', list explicit risks (e.g., macroeconomic headwinds, legal issues, missed estimates). "
+                    "5. Each article object must ONLY contain: title, url, source, published_at, extracted_text. Do NOT add extra fields. "
+                    "6. Be highly skeptical. If the news is mundane or lacks clear financial impact, classify the sentiment as 'neutral' with a low sentiment_score."
                 ),
             ),
             ChatMessage(

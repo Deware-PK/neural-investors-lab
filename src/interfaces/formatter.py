@@ -1,28 +1,42 @@
 from html import escape
+import re
 
 from src.main_orchestrator import BoardroomResult
 from src.models.synthesis_schema import Action, FinalSynthesis, RiskDecision
 
 
+def _sanitize_ascii(text: str) -> str:
+    """Replace non-ASCII characters with ASCII equivalents for terminal compatibility."""
+    replacements = {
+        "\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"',
+        "\u2013": "-", "\u2014": "--", "\u2026": "...",
+        "\u221a": "sqrt", "\u2248": "~", "\u2264": "<=", "\u2265": ">=",
+        "\u00b0": " deg ", "\u00d7": "x",
+    }
+    for char, repl in replacements.items():
+        text = text.replace(char, repl)
+    return text.encode("ascii", errors="replace").decode("ascii")
+
+
 ACTION_ICON = {
-    Action.BUY: "🟢",
-    Action.ACCUMULATE: "🟢",
-    Action.HOLD: "🟡",
-    Action.REDUCE: "🟠",
-    Action.SELL: "🔴",
-    Action.AVOID: "⚫",
+    Action.BUY: "[BUY]",
+    Action.ACCUMULATE: "[ACCUMULATE]",
+    Action.HOLD: "[HOLD]",
+    Action.REDUCE: "[REDUCE]",
+    Action.SELL: "[SELL]",
+    Action.AVOID: "[AVOID]",
 }
 
 RISK_ICON = {
-    RiskDecision.APPROVED: "✅",
-    RiskDecision.ADJUSTED: "⚖️",
-    RiskDecision.VETOED: "🛑",
+    RiskDecision.APPROVED: "[APPROVED]",
+    RiskDecision.ADJUSTED: "[ADJUSTED]",
+    RiskDecision.VETOED: "[VETOED]",
 }
 
 
 def format_final_synthesis_html(final: FinalSynthesis, persisted_record_id: str | None = None) -> str:
-    action_icon = ACTION_ICON.get(final.action, "📌")
-    risk_icon = RISK_ICON.get(final.risk_decision, "📌")
+    action_icon = ACTION_ICON.get(final.action, "[?]")
+    risk_icon = RISK_ICON.get(final.risk_decision, "[?]")
     lines = [
         f"<b>{action_icon} {escape(final.ticker)}: {escape(final.action.value.upper())}</b>",
         f"<b>Conviction:</b> {final.conviction_score}/100",
@@ -48,7 +62,7 @@ def format_final_synthesis_html(final: FinalSynthesis, persisted_record_id: str 
         )
     if persisted_record_id is not None:
         lines.extend(["", f"<code>{escape(persisted_record_id)}</code>"])
-    return "\n".join(lines)
+    return _sanitize_ascii("\n".join(lines))
 
 
 def format_boardroom_result_html(result: BoardroomResult) -> str:
@@ -66,7 +80,7 @@ def format_boardroom_result_html(result: BoardroomResult) -> str:
     if conflict.has_conflict:
         sections.extend(["", "<b>Debate Triggered</b>"])
         sections.extend(f"- {escape(reason)}" for reason in conflict.reasons)
-    return "\n".join(sections)
+    return _sanitize_ascii("\n".join(sections))
 
 
 def _format_price(value: float | None) -> str:

@@ -63,10 +63,14 @@ class ChartistAgent:
             ChatMessage(
                 role="system",
                 content=(
-                    "You are a visual technical chart analyst. Analyze only the supplied candlestick chart image. "
-                    "Do not calculate indicators or invent precise numeric metrics. Return only strict JSON matching: "
-                    "ticker, sentiment, confidence_score, summary, observed_patterns, support_zones, resistance_zones, risks. "
-                    "Use bullish, bearish, neutral, or mixed for sentiment."
+                    "You are an expert Price Action (PA) Chart Analyst. Analyze the supplied candlestick chart image to provide context that raw data cannot see. "
+                    "RULES: "
+                    "1. Return ONLY strict JSON matching the VisualChartAnalysis schema. "
+                    "2. Focus heavily on identifying recent price rejections (e.g., long wicks), consolidation zones, and momentum shifts. "
+                    "3. Do not invent precise numeric prices; use visual estimation for 'support_zones' and 'resistance_zones' (e.g., 'Demand zone around recent swing low'). "
+                    "4. In 'observed_patterns', strictly name standard patterns (e.g., Bull Flag, Double Bottom, Bearish Engulfing) only if they are clearly visible. "
+                    "5. Evaluate if the visual volume trend validates the price action. "
+                    "Your visual context will serve as a crucial validation layer for algorithmic indicators."
                 ),
             ),
             {
@@ -93,7 +97,7 @@ class ChartistAgent:
             temperature=0.1,
         )
         payload = extract_json_object(response.content)
-        payload = normalize_visual_chart_analysis(payload)
+        payload = normalize_visual_chart_analysis(payload, ticker=symbol)
         parsed = VisualChartAnalysis.model_validate(payload)
         if parsed.ticker.upper() != symbol:
             parsed = parsed.model_copy(update={"ticker": symbol})

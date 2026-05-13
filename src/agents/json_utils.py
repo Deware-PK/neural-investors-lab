@@ -58,6 +58,15 @@ def normalize_string_values(value: Any) -> Any:
 
 def normalize_strategy_draft(payload: dict[str, Any], ticker: str) -> dict[str, Any]:
     """Fix common LLM JSON errors in StrategyDraft responses."""
+    # Unwrap envelope like {"StrategyDraft": {...}}
+    if len(payload) == 1:
+        key = next(iter(payload))
+        if isinstance(payload[key], dict) and key.lower() in ("strategydraft", "strategy_draft"):
+            payload = payload[key]
+        elif isinstance(payload[key], list) and key.lower() in ("strategydraft", "strategy_draft"):
+            items = payload[key]
+            if items and isinstance(items[0], dict):
+                payload = items[0]
     # Fix action field: map common LLM errors to valid enum values
     action_mapping = {
         "bullish": "buy",
@@ -112,12 +121,43 @@ def normalize_strategy_draft(payload: dict[str, Any], ticker: str) -> dict[str, 
     return payload
 
 
-def normalize_visual_chart_analysis(payload: dict[str, Any]) -> dict[str, Any]:
+VISUAL_CHART_ALLOWED_FIELDS = {
+    "ticker", "sentiment", "confidence_score", "summary",
+    "observed_patterns", "support_zones", "resistance_zones", "risks",
+}
+
+
+def normalize_visual_chart_analysis(payload: dict[str, Any], ticker: str = "") -> dict[str, Any]:
     """Fix common LLM JSON errors in VisualChartAnalysis responses."""
     import re
 
+    # Strip extra fields not in the schema
+    payload = {k: v for k, v in payload.items() if k in VISUAL_CHART_ALLOWED_FIELDS}
+
+    # Unwrap envelope like {"VisualChartAnalysis": {...}}
+    if len(payload) == 1:
+        key = next(iter(payload))
+        if isinstance(payload[key], dict) and key.lower() in ("visualchartanalysis", "visual_chart_analysis"):
+            payload = payload[key]
+            payload = {k: v for k, v in payload.items() if k in VISUAL_CHART_ALLOWED_FIELDS}
+        elif isinstance(payload[key], list) and key.lower() in ("visualchartanalysis", "visual_chart_analysis"):
+            items = payload[key]
+            if items and isinstance(items[0], dict):
+                payload = items[0]
+                payload = {k: v for k, v in payload.items() if k in VISUAL_CHART_ALLOWED_FIELDS}
+
+    # Fill missing required fields with safe defaults
+    if "ticker" not in payload:
+        payload["ticker"] = ticker
+    if "sentiment" not in payload:
+        payload["sentiment"] = "neutral"
+    if "confidence_score" not in payload:
+        payload["confidence_score"] = 0.50
+    if "summary" not in payload:
+        payload["summary"] = "Visual chart analysis could not be fully parsed; defaulting to neutral."
+
     # Fix sentiment: lowercase and map common variants
-    if "sentiment" in payload and isinstance(payload["sentiment"], str):
+    if isinstance(payload.get("sentiment"), str):
         raw = payload["sentiment"].strip().lower()
         sentiment_map = {
             "bull": "bullish", "positive": "bullish",
@@ -128,36 +168,34 @@ def normalize_visual_chart_analysis(payload: dict[str, Any]) -> dict[str, Any]:
         payload["sentiment"] = sentiment_map.get(raw, raw)
 
     # Fix confidence_score: convert 0-100 scale to 0-1 scale, and handle string values
-    if "confidence_score" in payload:
-        raw = payload["confidence_score"]
-        if isinstance(raw, str):
-            confidence_map = {
-                "very high": 0.95, "very_high": 0.95,
-                "high": 0.80,
-                "medium": 0.50, "moderate": 0.50,
-                "low": 0.30,
-                "very low": 0.10, "very_low": 0.10,
-                "none": 0.05, "uncertain": 0.20,
-            }
-            payload["confidence_score"] = confidence_map.get(raw.strip().lower(), 0.50)
-        elif isinstance(raw, (int, float)):
-            if raw > 1:
-                payload["confidence_score"] = raw / 100
+    raw = payload.get("confidence_score")
+    if isinstance(raw, str):
+        confidence_map = {
+            "very high": 0.95, "very_high": 0.95,
+            "high": 0.80,
+            "medium": 0.50, "moderate": 0.50,
+            "low": 0.30,
+            "very low": 0.10, "very_low": 0.10,
+            "none": 0.05, "uncertain": 0.20,
+        }
+        payload["confidence_score"] = confidence_map.get(raw.strip().lower(), 0.50)
+    elif isinstance(raw, (int, float)):
+        if raw > 1:
+            payload["confidence_score"] = raw / 100
 
     # Fix observed_patterns: ensure all items are strings
-    if "observed_patterns" in payload and isinstance(payload["observed_patterns"], list):
+    if isinstance(payload.get("observed_patterns"), list):
         payload["observed_patterns"] = [str(item) for item in payload["observed_patterns"]]
 
     # Fix risks: ensure all items are strings
-    if "risks" in payload and isinstance(payload["risks"], list):
+    if isinstance(payload.get("risks"), list):
         payload["risks"] = [str(item) for item in payload["risks"]]
 
     # Fix support_zones: extract numbers from strings like "195 - 200"
-    if "support_zones" in payload and isinstance(payload["support_zones"], list):
+    if isinstance(payload.get("support_zones"), list):
         normalized_support = []
         for item in payload["support_zones"]:
             if isinstance(item, str):
-                # Extract first number from string
                 match = re.search(r"[\d.]+", item)
                 if match:
                     try:
@@ -169,11 +207,10 @@ def normalize_visual_chart_analysis(payload: dict[str, Any]) -> dict[str, Any]:
         payload["support_zones"] = normalized_support
 
     # Fix resistance_zones: extract numbers from strings like "220 - 225 (Current psychological level)"
-    if "resistance_zones" in payload and isinstance(payload["resistance_zones"], list):
+    if isinstance(payload.get("resistance_zones"), list):
         normalized_resistance = []
         for item in payload["resistance_zones"]:
             if isinstance(item, str):
-                # Extract first number from string
                 match = re.search(r"[\d.]+", item)
                 if match:
                     try:
@@ -189,6 +226,50 @@ def normalize_visual_chart_analysis(payload: dict[str, Any]) -> dict[str, Any]:
 
 def normalize_research_finding(payload: dict[str, Any]) -> dict[str, Any]:
     """Fix common LLM JSON errors in ResearchFinding responses."""
+    # Unwrap envelope like {"ResearchFinding": {...}} or {"ResearchFinding": [...]}
+    if len(payload) == 1:
+        key = next(iter(payload))
+        if key.lower() in ("researchfinding", "research_finding"):
+            value = payload[key]
+            if isinstance(value, dict):
+                payload = value
+            elif isinstance(value, list) and value and isinstance(value[0], dict):
+                # If items look like NewsArticles (have title/url), build ResearchFinding
+                if any("title" in item or "url" in item for item in value[:1]):
+                    payload = {
+                        "ticker": "",
+                        "sentiment": "neutral",
+                        "sentiment_score": 0,
+                        "summary": "Research finding constructed from article list.",
+                        "catalysts": [],
+                        "concerns": [],
+                        "articles": value,
+                    }
+                else:
+                    payload = value[0]
+    # If payload looks like a NewsArticle (has title/url but no ticker), wrap into ResearchFinding
+    if "ticker" not in payload and ("title" in payload or "url" in payload):
+        payload = {
+            "ticker": "",
+            "sentiment": "neutral",
+            "sentiment_score": 0,
+            "summary": "Research finding constructed from article data.",
+            "catalysts": [],
+            "concerns": [],
+            "articles": [payload],
+        }
+    # Fix sentiment: map common variants
+    if "sentiment" in payload and isinstance(payload["sentiment"], str):
+        raw = payload["sentiment"].strip().lower()
+        sentiment_map = {
+            "positive": "bullish", "bull": "bullish",
+            "negative": "bearish", "bear": "bearish",
+            "neutral": "neutral", "mixed": "mixed",
+        }
+        payload["sentiment"] = sentiment_map.get(raw, raw)
+    # Fill missing summary with safe default
+    if "summary" not in payload:
+        payload["summary"] = "News analysis summary could not be parsed; defaulting to neutral."
     # Fix sentiment_score: convert 0-100 scale to -1 to 1 scale
     if "sentiment_score" in payload and isinstance(payload["sentiment_score"], (int, float)):
         if abs(payload["sentiment_score"]) > 1:
@@ -214,16 +295,36 @@ def normalize_research_finding(payload: dict[str, Any]) -> dict[str, Any]:
                 normalized_articles.append(cleaned)
         payload["articles"] = normalized_articles
 
-    # Fix catalysts/concerns: wrap single strings into lists
+    # Fix catalysts/concerns: wrap single strings into lists, and convert dict items to strings
     for field in ("catalysts", "concerns"):
-        if field in payload and isinstance(payload[field], str):
-            payload[field] = [payload[field]]
+        if field in payload:
+            if isinstance(payload[field], str):
+                payload[field] = [payload[field]]
+            elif isinstance(payload[field], list):
+                normalized = []
+                for item in payload[field]:
+                    if isinstance(item, str):
+                        normalized.append(item)
+                    elif isinstance(item, dict):
+                        normalized.append(item.get("title") or item.get("summary") or str(item))
+                    else:
+                        normalized.append(str(item))
+                payload[field] = normalized
 
     return payload
 
 
 def normalize_risk_review(payload: dict[str, Any]) -> dict[str, Any]:
     """Fix common LLM JSON errors in RiskReview responses."""
+    # Unwrap envelope like {"RiskReview": {...}}
+    if len(payload) == 1:
+        key = next(iter(payload))
+        if isinstance(payload[key], dict) and key.lower() in ("riskreview", "risk_review"):
+            payload = payload[key]
+        elif isinstance(payload[key], list) and key.lower() in ("riskreview", "risk_review"):
+            items = payload[key]
+            if items and isinstance(items[0], dict):
+                payload = items[0]
     # Fix risk_decision field: map common LLM errors to valid enum values
     risk_decision_mapping = {
         "approved_with_limit": "adjusted",
@@ -239,6 +340,8 @@ def normalize_risk_review(payload: dict[str, Any]) -> dict[str, Any]:
         "partially_approved": "adjusted",
         "limited": "adjusted",
         "restricted": "adjusted",
+        "reduced": "adjusted",
+        "approved_with_reduction": "adjusted",
         "reject": "vetoed",
         "denied": "vetoed",
         "no": "vetoed",
@@ -261,5 +364,11 @@ def normalize_risk_review(payload: dict[str, Any]) -> dict[str, Any]:
             payload["risk_decision"] = risk_decision_mapping[decision_lower]
         elif decision_lower in valid_risk_decisions:
             payload["risk_decision"] = decision_lower
+        elif "veto" in decision_lower or "reject" in decision_lower or "denied" in decision_lower:
+            payload["risk_decision"] = "vetoed"
+        elif "approve" in decision_lower:
+            payload["risk_decision"] = "approved"
+        else:
+            payload["risk_decision"] = "adjusted"
 
     return payload
