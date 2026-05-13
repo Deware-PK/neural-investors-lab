@@ -118,6 +118,23 @@ def normalize_strategy_draft(payload: dict[str, Any], ticker: str) -> dict[str, 
         if "ticker" not in payload["conflict_assessment"]:
             payload["conflict_assessment"]["ticker"] = ticker
 
+    # Fix market_regime: map common LLM variants
+    if "market_regime" in payload and isinstance(payload["market_regime"], str):
+        regime_lower = payload["market_regime"].strip().lower()
+        regime_map = {
+            "bull market": "bull", "bullish": "bull",
+            "bear market": "bear", "bearish": "bear",
+            "sideways market": "sideways", "range": "sideways", "neutral": "sideways",
+        }
+        payload["market_regime"] = regime_map.get(regime_lower, regime_lower)
+
+    # Fix vix_level: convert string to float
+    if "vix_level" in payload and isinstance(payload["vix_level"], str):
+        try:
+            payload["vix_level"] = float(payload["vix_level"])
+        except (ValueError, TypeError):
+            payload["vix_level"] = None
+
     return payload
 
 

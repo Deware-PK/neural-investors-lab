@@ -260,8 +260,8 @@ class FinanceAPI:
             calls = chain.calls
             puts = chain.puts
 
-            total_call_oi = int(calls["openInterest"].sum()) if "openInterest" in calls.columns else 0
-            total_put_oi = int(puts["openInterest"].sum()) if "openInterest" in puts.columns else 0
+            total_call_oi = int(calls["openInterest"].fillna(0).sum()) if "openInterest" in calls.columns else 0
+            total_put_oi = int(puts["openInterest"].fillna(0).sum()) if "openInterest" in puts.columns else 0
 
             pc_ratio = total_put_oi / total_call_oi if total_call_oi > 0 else None
             options_sentiment = None

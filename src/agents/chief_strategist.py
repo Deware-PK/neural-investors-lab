@@ -112,6 +112,7 @@ class ChiefStrategistAgent:
                     "4. For BUY/ACCUMULATE actions, strictly set 'entry_price', 'take_profit' (targeting a realistic 1.5x - 2.0x ATR), and 'stop_loss' using the provided technical support/resistance levels. "
                     "5. MacroContext is the GLOBAL backdrop — a bear market regime or extreme VIX must lower conviction regardless of individual stock signals. "
                     "6. Your 'thesis' must be a ruthless, logical deduction explaining EXACTLY why the reward-to-risk ratio justifies the trade in the current market context."
+                    "7. Always populate 'market_regime' and 'vix_level' in your JSON output using values from MacroContext — these fields are required for backtest analytics."
                 ),
             ),
             ChatMessage(
@@ -125,7 +126,7 @@ class ChiefStrategistAgent:
                     f"MacroContext: {macro_context.model_dump(mode='json') if macro_context else None}\n"
                     f"OptionsFlow: {options_flow.model_dump(mode='json') if options_flow else None}\n"
                     "Return JSON fields: ticker, action, conviction_score, entry_price, take_profit, stop_loss, "
-                    "proposed_position_size_pct, thesis, key_risks, evidence, conflict_assessment."
+                    "proposed_position_size_pct, market_regime, vix_level, thesis, key_risks, evidence, conflict_assessment."
                 ),
             ),
         ]

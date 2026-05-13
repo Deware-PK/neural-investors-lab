@@ -20,6 +20,8 @@ class StrategyDraft(BaseModel):
     take_profit: float | None = Field(default=None, gt=0)
     stop_loss: float | None = Field(default=None, gt=0)
     proposed_position_size_pct: float = Field(default=0, ge=0, le=100)
+    market_regime: str | None = Field(None, description="Market regime at decision time for backtest analytics")
+    vix_level: float | None = Field(None, description="VIX value at decision time for backtest analytics")
     thesis: str
     key_risks: list[str] = Field(default_factory=list)
     evidence: list[EvidenceItem] = Field(default_factory=list)
