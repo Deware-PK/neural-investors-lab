@@ -13,6 +13,7 @@ from src.core.config import Settings, get_settings
 from src.core.db_postgres import create_session_factory, initialize_database, persist_analysis_output
 from src.core.db_redis import create_optional_redis_client
 from src.models.agent_schema import ConflictAssessment, StrategyDraft
+from src.models.edgar_schema import EdgarBundle
 from src.models.fundamental_schema import FundamentalAnalysis
 from src.models.macro_schema import MacroContext, OptionsFlow
 from src.models.research_schema import ResearchFinding
@@ -20,6 +21,7 @@ from src.models.synthesis_schema import FinalSynthesis
 from src.models.technical_schema import TechnicalAnalysis
 from src.models.vision_schema import VisualChartAnalysis
 from src.services.deep_research import DeepResearchService
+from src.services.edgar_api import EdgarAPI
 from src.services.finance_api import FinanceAPI
 from src.services.indicator_math import IndicatorMath
 
@@ -39,6 +41,7 @@ class BoardroomResult:
     final_synthesis: FinalSynthesis
     macro_context: MacroContext | None = None
     options_flow: OptionsFlow | None = None
+    edgar_bundle: EdgarBundle | None = None
     persisted_record_id: str | None = None
 
 
@@ -64,6 +67,7 @@ class BoardroomOrchestrator:
         self.chief_strategist = chief_strategist or ChiefStrategistAgent(settings=self.settings)
         self.risk_manager = risk_manager or RiskManagerAgent(settings=self.settings)
         self.finance_api = finance_api
+        self.edgar_api = EdgarAPI(redis_client=redis_client, settings=self.settings)
         self.session_factory = session_factory
 
     async def analyze_ticker(
@@ -74,21 +78,33 @@ class BoardroomOrchestrator:
     ) -> BoardroomResult:
         symbol = ticker.upper()
         logger.info("Incoming ticker request: %s", symbol)
-        fundamentals_task = asyncio.to_thread(self.auditor.analyze, symbol)
+
+        # Run slow data fetching tasks in parallel (yfinance, edgartools, vision LLM)
         technicals_task = asyncio.to_thread(self.chartist.analyze, symbol)
-        research_task = asyncio.to_thread(self.researcher.analyze, symbol, article_urls)
         visual_task = self.chartist.get_visual_analysis(symbol)
         macro_task = asyncio.to_thread(self.finance_api.fetch_macro_context)
         options_task = asyncio.to_thread(self.finance_api.fetch_options_flow, symbol)
-        fundamentals, technicals, research, visual_chart_analysis, macro_context, options_flow = await asyncio.gather(
-            fundamentals_task,
+        edgar_task = asyncio.to_thread(self.edgar_api.fetch_edgar_bundle, symbol)
+
+        logger.info("Starting Round 1 data fetching for %s", symbol)
+        technicals, visual_chart_analysis, macro_context, options_flow, edgar_bundle = await asyncio.gather(
             technicals_task,
-            research_task,
             visual_task,
             macro_task,
             options_task,
+            edgar_task,
         )
-        logger.info("Round 1 agents completed for %s (macro + options included)", symbol)
+        logger.info("Data fetching completed for %s. Starting agent analysis tasks.", symbol)
+
+        # Now run agent analyses that depend on the fetched data (auditor, researcher)
+        fundamentals_task = asyncio.to_thread(self.auditor.analyze, symbol, edgar_bundle)
+        research_task = asyncio.to_thread(self.researcher.analyze, symbol, article_urls, edgar_bundle=edgar_bundle)
+
+        fundamentals, research = await asyncio.gather(
+            fundamentals_task,
+            research_task,
+        )
+        logger.info("Round 1 agents completed for %s (macro, options, and EDGAR included)", symbol)
 
         conflict = self.chief_strategist.identify_contradictions(fundamentals, technicals, research)
         final_research = research
@@ -137,6 +153,7 @@ class BoardroomOrchestrator:
             final_synthesis=final,
             macro_context=macro_context,
             options_flow=options_flow,
+            edgar_bundle=edgar_bundle,
             persisted_record_id=record_id,
         )
 

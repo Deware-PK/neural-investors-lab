@@ -11,6 +11,7 @@ from src.evaluation.synthetic_signal_generator import SyntheticSignalGenerator
 from src.interfaces.formatter import format_boardroom_result_html, format_final_synthesis_html
 from src.main_orchestrator import BoardroomOrchestrator
 from src.models.agent_schema import ConflictAssessment, StrategyDraft
+from src.models.edgar_schema import EdgarBundle
 from src.models.evaluation_schema import HistoricalPrediction
 from src.models.fundamental_schema import FundamentalAnalysis, FundamentalSnapshot
 from src.models.market_data_schema import PriceBar
@@ -27,7 +28,7 @@ from src.models.vision_schema import VisualChartAnalysis
 
 
 class FakeAuditor:
-    def analyze(self, ticker: str) -> FundamentalAnalysis:
+    def analyze(self, ticker: str, edgar_bundle: EdgarBundle | None = None) -> FundamentalAnalysis:
         return FundamentalAnalysis(
             ticker=ticker,
             snapshot=FundamentalSnapshot(ticker=ticker, currency="USD"),
@@ -68,7 +69,7 @@ class FakeChartist:
 
 
 class FakeResearcher:
-    def analyze(self, ticker: str, article_urls: list[str] | None = None, context: str | None = None) -> ResearchFinding:
+    def analyze(self, ticker: str, article_urls: list[str] | None = None, context: str | None = None, edgar_bundle: EdgarBundle | None = None) -> ResearchFinding:
         return ResearchFinding(
             ticker=ticker,
             sentiment="bullish",

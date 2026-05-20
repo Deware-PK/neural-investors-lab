@@ -275,6 +275,9 @@ def normalize_research_finding(payload: dict[str, Any]) -> dict[str, Any]:
             "concerns": [],
             "articles": [payload],
         }
+    # Ensure ticker is always present
+    if "ticker" not in payload:
+        payload["ticker"] = ""
     # Fix sentiment: map common variants
     if "sentiment" in payload and isinstance(payload["sentiment"], str):
         raw = payload["sentiment"].strip().lower()
