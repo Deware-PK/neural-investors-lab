@@ -95,6 +95,12 @@ class BoardroomOrchestrator:
             edgar_task,
         )
         logger.info("Data fetching completed for %s. Starting agent analysis tasks.", symbol)
+        if self.settings.show_ai_data:
+            logger.info("AI Data Input — %s Technicals: %s", symbol, technicals.model_dump(mode="json"))
+            logger.info("AI Data Input — %s VisualChart: %s", symbol, visual_chart_analysis.model_dump(mode="json"))
+            logger.info("AI Data Input — %s MacroContext: %s", symbol, macro_context.model_dump(mode="json") if macro_context else None)
+            logger.info("AI Data Input — %s OptionsFlow: %s", symbol, options_flow.model_dump(mode="json") if options_flow else None)
+            logger.info("AI Data Input — %s EdgarBundle: %s", symbol, edgar_bundle.model_dump(mode="json") if edgar_bundle else None)
 
         # Now run agent analyses that depend on the fetched data (auditor, researcher)
         fundamentals_task = asyncio.to_thread(self.auditor.analyze, symbol, edgar_bundle)
@@ -104,6 +110,9 @@ class BoardroomOrchestrator:
             fundamentals_task,
             research_task,
         )
+        if self.settings.show_ai_data:
+            logger.info("AI Data Input — %s Fundamentals: %s", symbol, fundamentals.model_dump(mode="json"))
+            logger.info("AI Data Input — %s ResearchFinding: %s", symbol, research.model_dump(mode="json"))
         logger.info("Round 1 agents completed for %s (macro, options, and EDGAR included)", symbol)
 
         conflict = self.chief_strategist.identify_contradictions(fundamentals, technicals, research)

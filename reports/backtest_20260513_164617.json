@@ -1,0 +1,18 @@
+{
+  "generated_at": "2026-05-13T09:46:17.654456Z",
+  "total_trades": 101,
+  "win_rate_pct": 52.48,
+  "average_t7_return_pct": 1.02,
+  "average_t30_return_pct": 5.97,
+  "average_max_drawdown_pct": -13.53,
+  "outcomes": {
+    "stop_loss_hit": 47,
+    "take_profit_hit": 53,
+    "open": 1
+  },
+  "pattern_notes": [
+    "High stop-loss frequency for TSLA",
+    "High stop-loss frequency for IONQ",
+    "High stop-loss frequency for RKLB"
+  ]
+}

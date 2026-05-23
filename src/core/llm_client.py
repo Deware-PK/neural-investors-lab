@@ -41,6 +41,24 @@ class OpenRouterClient:
             api_key=self.settings.openrouter_api_key.get_secret_value(),
         )
 
+    @staticmethod
+    def _sanitize_messages_for_logging(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Return a copy of messages with base64 image URLs truncated for readability."""
+        import copy
+        sanitized = copy.deepcopy(messages)
+        for msg in sanitized:
+            content = msg.get("content")
+            if isinstance(content, list):
+                for item in content:
+                    if isinstance(item, dict) and item.get("type") == "image_url":
+                        image_url = item.get("image_url", {})
+                        url = image_url.get("url", "")
+                        if isinstance(url, str) and url.startswith("data:image"):
+                            image_url["url"] = url[:50] + "...<base64 truncated>..."
+            elif isinstance(content, str) and content.startswith("data:image"):
+                msg["content"] = content[:50] + "...<base64 truncated>..."
+        return sanitized
+
     def generate_completion(
         self,
         model: str,
@@ -60,6 +78,15 @@ class OpenRouterClient:
         if use_reasoning:
             request["extra_body"] = {"reasoning": {"enabled": True}}
 
+        if self.settings.debug_prompts:
+            log_request = {
+                "model": request["model"],
+                "temperature": request["temperature"],
+                "use_reasoning": use_reasoning,
+                "messages": self._sanitize_messages_for_logging(payload_messages),
+            }
+            logger.debug("LLM prompt dump:\n%s", log_request)
+
         response = self.client.chat.completions.create(**request)
         message = response.choices[0].message
         raw_message = message.model_dump(exclude_none=True)
@@ -71,6 +98,8 @@ class OpenRouterClient:
             "LLM call: model=%s, prompt_tokens=%d, completion_tokens=%d, total_tokens=%d",
             model, prompt_tokens, completion_tokens, total_tokens,
         )
+        if self.settings.show_ai_data:
+            logger.info("LLM Output — model=%s:\n%s", model, message.content or "")
         return LLMResponse(
             content=message.content or "",
             reasoning_details=getattr(message, "reasoning_details", None),

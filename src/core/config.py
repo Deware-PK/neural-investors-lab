@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     research_fetch_delay_seconds: float = Field(default=1.5, ge=0, alias="RESEARCH_FETCH_DELAY_SECONDS")
     edgar_identity: str = Field(default="", alias="EDGAR_IDENTITY")
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(default="INFO", alias="LOG_LEVEL")
+    debug_prompts: bool = Field(default=False, alias="DEBUG_PROMPTS")
+    show_ai_data: bool = Field(default=False, alias="SHOW_AI_DATA")
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -1,0 +1,13 @@
+{
+  "generated_at": "2026-05-13T09:33:23.173168Z",
+  "total_trades": 19,
+  "win_rate_pct": 63.16,
+  "average_t7_return_pct": 2.35,
+  "average_t30_return_pct": -0.79,
+  "average_max_drawdown_pct": -6.1,
+  "outcomes": {
+    "take_profit_hit": 12,
+    "stop_loss_hit": 7
+  },
+  "pattern_notes": []
+}

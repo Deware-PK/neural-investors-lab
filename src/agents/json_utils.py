@@ -135,6 +135,13 @@ def normalize_strategy_draft(payload: dict[str, Any], ticker: str) -> dict[str, 
         except (ValueError, TypeError):
             payload["vix_level"] = None
 
+    # Fix trade levels: 0.0/0/negative values from LLM should be treated as None (schema requires gt=0)
+    for level_field in ("entry_price", "take_profit", "stop_loss"):
+        if level_field in payload:
+            val = payload[level_field]
+            if isinstance(val, (int, float)) and val <= 0:
+                payload[level_field] = None
+
     return payload
 
 
