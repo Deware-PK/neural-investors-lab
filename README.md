@@ -278,6 +278,6 @@ neural-investors-lab/
 
 ## License
 
-Not decided yet.
+This project is licensed under the MIT License - see the [LICENSE](https://github.com/Deware-PK/neural-investors-lab/blob/main/LICENSE) file for details.
 
 ---
