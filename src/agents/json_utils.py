@@ -142,6 +142,15 @@ def normalize_strategy_draft(payload: dict[str, Any], ticker: str) -> dict[str, 
             if isinstance(val, (int, float)) and val <= 0:
                 payload[level_field] = None
 
+    # Fix proposed_position_size_pct: None or missing should default to 0.0 (schema is non-nullable float)
+    if "proposed_position_size_pct" not in payload or payload["proposed_position_size_pct"] is None:
+        payload["proposed_position_size_pct"] = 0.0
+    elif isinstance(payload["proposed_position_size_pct"], str):
+        try:
+            payload["proposed_position_size_pct"] = float(payload["proposed_position_size_pct"])
+        except (ValueError, TypeError):
+            payload["proposed_position_size_pct"] = 0.0
+
     return payload
 
 

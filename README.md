@@ -124,7 +124,7 @@ SHOW_AI_DATA=false           # dump raw data inputs and LLM outputs
 ### 4. Verify
 
 ```bash
-uv run python test.py
+uv run python tests/test.py
 ```
 
 ---
@@ -135,28 +135,28 @@ uv run python test.py
 
 ```bash
 # Analyze a single ticker (recommended first run — skip DB persistence)
-uv run python test.py --live NVDA --no-persist
+uv run python tests/test.py --live NVDA --no-persist
 
 # With custom article URLs for research context
-uv run python test.py --live TSLA --article-url https://example.com/news/tesla
+uv run python tests/test.py --live TSLA --article-url https://example.com/news/tesla
 
 # Skip database persistence
-uv run python test.py --live AAPL --no-persist
+uv run python tests/test.py --live AAPL --no-persist
 
 # Debug modes — see exactly what the AI sees
-DEBUG_PROMPTS=true SHOW_AI_DATA=true uv run python test.py --live NVDA --no-persist
+DEBUG_PROMPTS=true SHOW_AI_DATA=true uv run python tests/test.py --live NVDA --no-persist
 ```
 
 ### Backtesting
 
 ```bash
 # Generate synthetic historical signals (5 years) then backtest
-uv run python test.py --generate-synthetic-backtest AAPL
-uv run python test.py --generate-synthetic-backtest MSFT
-uv run python test.py --generate-synthetic-backtest GOOGL
+uv run python tests/test.py --generate-synthetic-backtest AAPL
+uv run python tests/test.py --generate-synthetic-backtest MSFT
+uv run python tests/test.py --generate-synthetic-backtest GOOGL
 
 # Run backtest report on all stored predictions
-uv run python test.py --backtest-report
+uv run python tests/test.py --backtest-report
 ```
 
 ### Telegram Bot
@@ -227,9 +227,11 @@ neural-investors-lab/
 │   ├── project_blueprint.md
 │   └── checkpoints/             # Session checkpoint notes
 ├── reports/                 # Backtest JSON reports
+├── tests/
+│   ├── __init__.py
+│   └── test.py              # CLI test runner
 ├── docker-compose.yml       # PostgreSQL + Redis
 ├── pyproject.toml
-└── test.py                  # CLI test runner
 ```
 
 ---
