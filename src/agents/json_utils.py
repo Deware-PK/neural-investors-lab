@@ -6,21 +6,18 @@ from pydantic import BaseModel
 
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
-CONSTRAINED_STRING_FIELDS = {
-    "action",
-    "bollinger_state",
-    "divergence",
-    "moving_average_state",
-    "risk_decision",
-    "sentiment",
-    "state",
-    "volume_trend",
-}
 
 
 def parse_json_model(content: str, model_type: type[ModelT]) -> ModelT:
+    """Extract JSON from an LLM response and validate it against *model_type*.
+
+    Schemas that are parsed from LLM output must define a
+    ``model_validator(mode='before')`` that normalises enum aliases, fixes
+    numeric scales, unwraps envelopes, and strips extra fields.  This keeps
+    parsing logic co-located with the schema and removes the need for ad-hoc
+    ``normalize_*`` helper functions.
+    """
     payload = extract_json_object(content)
-    payload = normalize_string_values(payload)
     return model_type.model_validate(payload)
 
 
@@ -39,21 +36,6 @@ def extract_json_object(content: str) -> dict[str, Any]:
         msg = "Expected a JSON object from LLM response"
         raise ValueError(msg)
     return parsed
-
-
-def normalize_string_values(value: Any) -> Any:
-    if isinstance(value, dict):
-        normalized: dict[str, Any] = {}
-        for key, item in value.items():
-            normalized_item = normalize_string_values(item)
-            if key in CONSTRAINED_STRING_FIELDS and isinstance(normalized_item, str):
-                normalized[key] = normalized_item.strip().lower()
-            else:
-                normalized[key] = normalized_item
-        return normalized
-    if isinstance(value, list):
-        return [normalize_string_values(item) for item in value]
-    return value
 
 
 def normalize_strategy_draft(payload: dict[str, Any], ticker: str) -> dict[str, Any]:

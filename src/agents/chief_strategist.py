@@ -1,6 +1,6 @@
 import logging
 
-from src.agents.json_utils import extract_json_object, normalize_strategy_draft
+from src.agents.json_utils import parse_json_model
 from src.agents.researcher import ResearcherAgent
 from src.core.config import Settings, get_settings
 from src.core.llm_client import ChatMessage, OpenRouterClient, get_openrouter_client
@@ -108,7 +108,7 @@ class ChiefStrategistAgent:
                     "RULES: "
                     "1. Return ONLY strict JSON matching the StrategyDraft schema. "
                     "2. Do not invent numeric metrics; rely entirely on the provided Python calculations. "
-                    "3. If 'ConflictAssessment' flags a contradiction (e.g., Bearish news vs Bullish technicals), you MUST address it in your 'thesis' and reflect the uncertainty by lowering the 'conviction_score' or changing the action to HOLD. "
+                    "3. If 'ConflictAssessment' flags a contradiction (e.g., Bearish news vs Bullish technicals), you MUST address it in your 'thesis' and reflect the uncertainty by lowering the 'conviction_score' or changing the action to 'hnew'. "
                     "4. For BUY/ACCUMULATE actions, strictly set 'entry_price', 'take_profit' (targeting a realistic 1.5x - 2.0x ATR), and 'stop_loss' using the provided technical support/resistance levels. "
                     "5. MacroContext is the GLOBAL backdrop — a bear market regime or extreme VIX must lower conviction regardless of individual stock signals. "
                     "6. Your 'thesis' must be a ruthless, logical deduction explaining EXACTLY why the reward-to-risk ratio justifies the trade in the current market context."
@@ -126,7 +126,9 @@ class ChiefStrategistAgent:
                     f"MacroContext: {macro_context.model_dump(mode='json') if macro_context else None}\n"
                     f"OptionsFlow: {options_flow.model_dump(mode='json') if options_flow else None}\n"
                     "Return JSON fields: ticker, action, conviction_score, entry_price, take_profit, stop_loss, "
-                    "proposed_position_size_pct, market_regime, vix_level, thesis, key_risks, evidence, conflict_assessment."
+                    "proposed_position_size_pct, market_regime, vix_level, thesis, key_risks, evidence, conflict_assessment. "
+                    "action MUST be one of: buy, accumulate, hnew, reduce, sell, avoid. "
+                    "market_regime MUST be one of: bull, bear, sideways."
                 ),
             ),
         ]
@@ -136,9 +138,7 @@ class ChiefStrategistAgent:
             use_reasoning=self.settings.ceo_model_reasoning,
             temperature=0.1,
         )
-        payload = extract_json_object(response.content)
-        payload = normalize_strategy_draft(payload, fundamentals.ticker)
-        draft = StrategyDraft.model_validate(payload)
+        draft = parse_json_model(response.content, StrategyDraft)
         if draft.ticker.upper() != fundamentals.ticker.upper():
             draft = draft.model_copy(update={"ticker": fundamentals.ticker.upper()})
         if draft.conflict_assessment is None:

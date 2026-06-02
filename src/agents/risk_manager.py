@@ -1,6 +1,6 @@
 import logging
 
-from src.agents.json_utils import extract_json_object, normalize_risk_review
+from src.agents.json_utils import parse_json_model
 from src.core.config import Settings, get_settings
 from src.core.llm_client import ChatMessage, OpenRouterClient, get_openrouter_client
 from src.models.agent_schema import RiskReview, StrategyDraft
@@ -108,7 +108,8 @@ class RiskManagerAgent:
                     "2. Treat the provided Python risk assessment limits (like max_value_at_risk_pct and kelly_fraction) as absolute maximums. "
                     "3. You have the authority to override the CEO. If the 'thesis' is weak, the news is volatile, or the technical stop-loss is placed in a 'noise' zone, you MUST reduce the 'approved_position_size_pct' or change the decision to VETOED. "
                     "4. Never approve a position size larger than the Python-calculated position_size_pct. "
-                    "5. Provide a brutal, mathematically grounded 'rationale' for your decision and explicitly list 'additional_risks' that the CEO might have overlooked."
+                    "5. Provide a brutal, mathematically grounded 'rationale' for your decision and explicitly list 'additional_risks' that the CEO might have overlooked. "
+                    "risk_decision MUST be one of: approved, vetoed, adjusted."
                 ),
             ),
             ChatMessage(
@@ -126,9 +127,7 @@ class RiskManagerAgent:
             use_reasoning=self.settings.cro_model_reasoning,
             temperature=0.1,
         )
-        payload = extract_json_object(response.content)
-        payload = normalize_risk_review(payload)
-        review = RiskReview.model_validate(payload)
+        review = parse_json_model(response.content, RiskReview)
         approved_size = min(review.approved_position_size_pct, risk_assessment.position_size_pct)
         if approved_size != review.approved_position_size_pct:
             review = review.model_copy(update={"approved_position_size_pct": approved_size, "risk_decision": RiskDecision.ADJUSTED})

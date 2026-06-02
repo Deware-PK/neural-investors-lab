@@ -1,6 +1,6 @@
 import logging
 
-from src.agents.json_utils import extract_json_object, normalize_research_finding
+from src.agents.json_utils import parse_json_model
 from src.core.config import Settings, get_settings
 from src.core.llm_client import ChatMessage, OpenRouterClient, get_openrouter_client
 from src.models.edgar_schema import EdgarBundle
@@ -109,9 +109,7 @@ class ResearcherAgent:
             temperature=0.1,
         )
         try:
-            payload = extract_json_object(response.content)
-            payload = normalize_research_finding(payload)
-            parsed = ResearchFinding.model_validate(payload)
+            parsed = parse_json_model(response.content, ResearchFinding)
         except Exception:
             logger.warning("Failed to parse ResearchFinding JSON for %s, using safe default", ticker)
             parsed = ResearchFinding(

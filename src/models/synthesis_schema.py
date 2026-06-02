@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -42,6 +43,25 @@ class FinalSynthesis(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_before(cls, values: Any) -> Any:
+        if not isinstance(values, dict):
+            return values
+        from src.models._normalizers import coerce_enum_field, ensure_list_of_strings, fix_conviction_score
+
+        coerce_enum_field(values, "action")
+        coerce_enum_field(values, "risk_decision")
+        if "conviction_score" in values:
+            values["conviction_score"] = fix_conviction_score(values["conviction_score"])
+        ensure_list_of_strings(values, "key_risks")
+        if "evidence" in values and not isinstance(values.get("evidence"), list):
+            values["evidence"] = []
+        elif "evidence" in values and isinstance(values.get("evidence"), list):
+            if values["evidence"] and isinstance(values["evidence"][0], str):
+                values["evidence"] = []
+        return values
 
     @model_validator(mode="after")
     def validate_trade_levels(self) -> "FinalSynthesis":

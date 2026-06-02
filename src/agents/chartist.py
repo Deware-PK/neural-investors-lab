@@ -7,7 +7,7 @@ import matplotlib
 matplotlib.use('Agg')
 import mplfinance as mpf
 
-from src.agents.json_utils import extract_json_object, normalize_visual_chart_analysis
+from src.agents.json_utils import parse_json_model
 from src.core.config import Settings, get_settings
 from src.core.llm_client import ChatMessage, OpenRouterClient, get_openrouter_client
 from src.models.technical_schema import TechnicalAnalysis
@@ -105,9 +105,7 @@ class ChartistAgent:
             use_reasoning=self.settings.news_analyst_model_reasoning,
             temperature=0.1,
         )
-        payload = extract_json_object(response.content)
-        payload = normalize_visual_chart_analysis(payload, ticker=symbol)
-        parsed = VisualChartAnalysis.model_validate(payload)
+        parsed = parse_json_model(response.content, VisualChartAnalysis)
         if parsed.ticker.upper() != symbol:
             parsed = parsed.model_copy(update={"ticker": symbol})
         logger.info(

@@ -1,7 +1,11 @@
 import argparse
 import asyncio
+import sys
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
+from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.core.config import get_settings
 from src.core.logging import configure_logging
@@ -100,6 +104,8 @@ class FakeChiefStrategist:
         research: ResearchFinding,
         conflict: ConflictAssessment,
         visual_chart_analysis: VisualChartAnalysis | None = None,
+        macro_context: Any = None,
+        options_flow: Any = None,
     ) -> StrategyDraft:
         return StrategyDraft(
             ticker=fundamentals.ticker,
