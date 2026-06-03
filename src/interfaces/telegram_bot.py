@@ -5,6 +5,7 @@ from telegram.ext import Application, ApplicationBuilder, CommandHandler, Contex
 
 from src.core.config import Settings, get_settings
 from src.core.logging import configure_logging
+from src.core.i18n import get_text
 from src.interfaces.formatter import format_boardroom_result_html
 from src.main_orchestrator import BoardroomOrchestrator
 
@@ -28,24 +29,21 @@ class TelegramBotInterface:
         return application
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        await self._reply(update, "<b>Neural Investors Lab</b>\nUse <code>/analyze TICKER</code> to start a boardroom review.")
+        await self._reply(update, get_text(self.settings.output_language, "bot_start"))
 
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        await self._reply(
-            update,
-            "<b>Commands</b>\n<code>/analyze AAPL</code>\n<code>/analyze AAPL https://example.com/news</code>",
-        )
+        await self._reply(update, get_text(self.settings.output_language, "bot_help"))
 
     async def analyze_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not context.args:
-            await self._reply(update, "Usage: <code>/analyze TICKER [article_url ...]</code>")
+            await self._reply(update, get_text(self.settings.output_language, "bot_analyze_usage"))
             return
         ticker = context.args[0].upper()
         article_urls = context.args[1:]
         logger.info("Telegram ticker request received: %s", ticker)
-        await self._reply(update, f"Running boardroom analysis for <b>{ticker}</b>...")
+        await self._reply(update, get_text(self.settings.output_language, "bot_analyze_running").format(ticker=ticker))
         result = await self.orchestrator.analyze_ticker(ticker, article_urls=article_urls, persist=True)
-        await self._reply(update, format_boardroom_result_html(result))
+        await self._reply(update, format_boardroom_result_html(result, lang=self.settings.output_language))
 
     @staticmethod
     async def _reply(update: Update, text: str) -> None:

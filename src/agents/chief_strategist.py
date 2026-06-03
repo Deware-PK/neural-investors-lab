@@ -3,6 +3,7 @@ import logging
 from src.agents.json_utils import parse_json_model
 from src.agents.researcher import ResearcherAgent
 from src.core.config import Settings, get_settings
+from src.core.i18n import localize_prompt
 from src.core.llm_client import ChatMessage, OpenRouterClient, get_openrouter_client
 from src.models.agent_schema import ConflictAssessment, StrategyDraft
 from src.models.fundamental_schema import FundamentalAnalysis
@@ -99,20 +100,24 @@ class ChiefStrategistAgent:
         options_flow: OptionsFlow | None = None,
     ) -> StrategyDraft:
         client = self.llm_client or get_openrouter_client(self.settings)
+        lang = self.settings.output_language
         messages = [
             ChatMessage(
                 role="system",
-                content=(
-                    "You are the Chief Strategist of an elite quantitative hedge fund. Your primary goal is capital preservation and high-probability swing trades (T+7 to T+30). "
-                    "Analyze the intersection of fundamentals, technical indicators, and news sentiment. "
-                    "RULES: "
-                    "1. Return ONLY strict JSON matching the StrategyDraft schema. "
-                    "2. Do not invent numeric metrics; rely entirely on the provided Python calculations. "
-                    "3. If 'ConflictAssessment' flags a contradiction (e.g., Bearish news vs Bullish technicals), you MUST address it in your 'thesis' and reflect the uncertainty by lowering the 'conviction_score' or changing the action to 'hnew'. "
-                    "4. For BUY/ACCUMULATE actions, strictly set 'entry_price', 'take_profit' (targeting a realistic 1.5x - 2.0x ATR), and 'stop_loss' using the provided technical support/resistance levels. "
-                    "5. MacroContext is the GLOBAL backdrop — a bear market regime or extreme VIX must lower conviction regardless of individual stock signals. "
-                    "6. Your 'thesis' must be a ruthless, logical deduction explaining EXACTLY why the reward-to-risk ratio justifies the trade in the current market context."
-                    "7. Always populate 'market_regime' and 'vix_level' in your JSON output using values from MacroContext — these fields are required for backtest analytics."
+                content=localize_prompt(
+                    (
+                        "You are the Chief Strategist of an elite quantitative hedge fund. Your primary goal is capital preservation and high-probability swing trades (T+7 to T+30). "
+                        "Analyze the intersection of fundamentals, technical indicators, and news sentiment. "
+                        "RULES: "
+                        "1. Return ONLY strict JSON matching the StrategyDraft schema. "
+                        "2. Do not invent numeric metrics; rely entirely on the provided Python calculations. "
+                        "3. If 'ConflictAssessment' flags a contradiction (e.g., Bearish news vs Bullish technicals), you MUST address it in your 'thesis' and reflect the uncertainty by lowering the 'conviction_score' or changing the action to 'hnew'. "
+                        "4. For BUY/ACCUMULATE actions, strictly set 'entry_price', 'take_profit' (targeting a realistic 1.5x - 2.0x ATR), and 'stop_loss' using the provided technical support/resistance levels. "
+                        "5. MacroContext is the GLOBAL backdrop — a bear market regime or extreme VIX must lower conviction regardless of individual stock signals. "
+                        "6. Your 'thesis' must be a ruthless, logical deduction explaining EXACTLY why the reward-to-risk ratio justifies the trade in the current market context."
+                        "7. Always populate 'market_regime' and 'vix_level' in your JSON output using values from MacroContext — these fields are required for backtest analytics."
+                    ),
+                    lang,
                 ),
             ),
             ChatMessage(

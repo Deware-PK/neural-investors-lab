@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(default="INFO", alias="LOG_LEVEL")
     debug_prompts: bool = Field(default=False, alias="DEBUG_PROMPTS")
     show_ai_data: bool = Field(default=False, alias="SHOW_AI_DATA")
+    output_language: str = Field(default="en", alias="OUTPUT_LANGUAGE")
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -35,6 +36,9 @@ class Settings(BaseSettings):
         self.ceo_model = self.ceo_model.strip()
         self.cro_model = self.cro_model.strip()
         self.news_analyst_model = self.news_analyst_model.strip()
+        self.output_language = self.output_language.strip().lower()
+        if self.output_language not in {"en", "th"}:
+            self.output_language = "en"
         return self
 
     def missing_runtime_secrets(self) -> list[str]:

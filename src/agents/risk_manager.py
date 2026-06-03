@@ -2,6 +2,7 @@ import logging
 
 from src.agents.json_utils import parse_json_model
 from src.core.config import Settings, get_settings
+from src.core.i18n import localize_prompt
 from src.core.llm_client import ChatMessage, OpenRouterClient, get_openrouter_client
 from src.models.agent_schema import RiskReview, StrategyDraft
 from src.models.risk_schema import RiskAssessment
@@ -97,19 +98,23 @@ class RiskManagerAgent:
             )
 
         client = self.llm_client or get_openrouter_client(self.settings)
+        lang = self.settings.output_language
         messages = [
             ChatMessage(
                 role="system",
-                content=(
-                    "You are the Chief Risk Officer (CRO) of a strict quantitative trading firm. Your ONLY job is to protect the portfolio from ruin. "
-                    "You review the StrategyDraft and the Python-calculated RiskAssessment. "
-                    "RULES: "
-                    "1. Return ONLY strict JSON matching the RiskReview schema. "
-                    "2. Treat the provided Python risk assessment limits (like max_value_at_risk_pct and kelly_fraction) as absolute maximums. "
-                    "3. You have the authority to override the CEO. If the 'thesis' is weak, the news is volatile, or the technical stop-loss is placed in a 'noise' zone, you MUST reduce the 'approved_position_size_pct' or change the decision to VETOED. "
-                    "4. Never approve a position size larger than the Python-calculated position_size_pct. "
-                    "5. Provide a brutal, mathematically grounded 'rationale' for your decision and explicitly list 'additional_risks' that the CEO might have overlooked. "
-                    "risk_decision MUST be one of: approved, vetoed, adjusted."
+                content=localize_prompt(
+                    (
+                        "You are the Chief Risk Officer (CRO) of a strict quantitative trading firm. Your ONLY job is to protect the portfolio from ruin. "
+                        "You review the StrategyDraft and the Python-calculated RiskAssessment. "
+                        "RULES: "
+                        "1. Return ONLY strict JSON matching the RiskReview schema. "
+                        "2. Treat the provided Python risk assessment limits (like max_value_at_risk_pct and kelly_fraction) as absolute maximums. "
+                        "3. You have the authority to override the CEO. If the 'thesis' is weak, the news is volatile, or the technical stop-loss is placed in a 'noise' zone, you MUST reduce the 'approved_position_size_pct' or change the decision to VETOED. "
+                        "4. Never approve a position size larger than the Python-calculated position_size_pct. "
+                        "5. Provide a brutal, mathematically grounded 'rationale' for your decision and explicitly list 'additional_risks' that the CEO might have overlooked. "
+                        "risk_decision MUST be one of: approved, vetoed, adjusted."
+                    ),
+                    lang,
                 ),
             ),
             ChatMessage(

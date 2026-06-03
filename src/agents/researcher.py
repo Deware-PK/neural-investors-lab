@@ -2,6 +2,7 @@ import logging
 
 from src.agents.json_utils import parse_json_model
 from src.core.config import Settings, get_settings
+from src.core.i18n import localize_prompt
 from src.core.llm_client import ChatMessage, OpenRouterClient, get_openrouter_client
 from src.models.edgar_schema import EdgarBundle
 from src.models.research_schema import NewsArticle, ResearchFinding
@@ -83,18 +84,22 @@ class ResearcherAgent:
                 f"Insider Trading (last 10 Form 4):\n{summary_str}"
             )
 
+        lang = self.settings.output_language
         messages = [
             ChatMessage(
                 role="system",
-                content=(
-                    "You are a Senior Quantitative News Analyst. Your job is to filter out market noise and identify true actionable catalysts from the provided news snippets. "
-                    "RULES: "
-                    "1. Return ONLY strict JSON matching the ResearchFinding schema. "
-                    "2. Evaluate sentiment strictly based on potential short-term price impact. Ignore generic corporate PR. "
-                    "3. In 'catalysts', list ONLY concrete events (e.g., M&A, earnings beats, regulatory approvals, institutional flow). "
-                    "4. In 'concerns', list explicit risks (e.g., macroeconomic headwinds, legal issues, missed estimates). "
-                    "5. Each article object must ONLY contain: title, url, source, published_at, extracted_text. Do NOT add extra fields. "
-                    "6. Be highly skeptical. If the news is mundane or lacks clear financial impact, classify the sentiment as 'neutral' with a low sentiment_score."
+                content=localize_prompt(
+                    (
+                        "You are a Senior Quantitative News Analyst. Your job is to filter out market noise and identify true actionable catalysts from the provided news snippets. "
+                        "RULES: "
+                        "1. Return ONLY strict JSON matching the ResearchFinding schema. "
+                        "2. Evaluate sentiment strictly based on potential short-term price impact. Ignore generic corporate PR. "
+                        "3. In 'catalysts', list ONLY concrete events (e.g., M&A, earnings beats, regulatory approvals, institutional flow). "
+                        "4. In 'concerns', list explicit risks (e.g., macroeconomic headwinds, legal issues, missed estimates). "
+                        "5. Each article object must ONLY contain: title, url, source, published_at, extracted_text. Do NOT add extra fields. "
+                        "6. Be highly skeptical. If the news is mundane or lacks clear financial impact, classify the sentiment as 'neutral' with a low sentiment_score."
+                    ),
+                    lang,
                 ),
             ),
             ChatMessage(

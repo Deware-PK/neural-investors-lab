@@ -9,6 +9,7 @@ import mplfinance as mpf
 
 from src.agents.json_utils import parse_json_model
 from src.core.config import Settings, get_settings
+from src.core.i18n import localize_prompt
 from src.core.llm_client import ChatMessage, OpenRouterClient, get_openrouter_client
 from src.models.technical_schema import TechnicalAnalysis
 from src.models.vision_schema import VisualChartAnalysis
@@ -68,18 +69,22 @@ class ChartistAgent:
         logger.info("Visual chart analysis started for %s", symbol)
         image_base64 = self._get_chart_image_base64(symbol, period=period, interval=interval)
         client = self.llm_client or get_openrouter_client(self.settings)
+        lang = self.settings.output_language
         messages = [
             ChatMessage(
                 role="system",
-                content=(
-                    "You are an expert Price Action (PA) Chart Analyst. Analyze the supplied candlestick chart image to provide context that raw data cannot see. "
-                    "RULES: "
-                    "1. Return ONLY strict JSON matching the VisualChartAnalysis schema. "
-                    "2. Focus heavily on identifying recent price rejections (e.g., long wicks), consolidation zones, and momentum shifts. "
-                    "3. Do not invent precise numeric prices; use visual estimation for 'support_zones' and 'resistance_zones' (e.g., 'Demand zone around recent swing low'). "
-                    "4. In 'observed_patterns', strictly name standard patterns (e.g., Bull Flag, Double Bottom, Bearish Engulfing) only if they are clearly visible. "
-                    "5. Evaluate if the visual volume trend validates the price action. "
-                    "Your visual context will serve as a crucial validation layer for algorithmic indicators."
+                content=localize_prompt(
+                    (
+                        "You are an expert Price Action (PA) Chart Analyst. Analyze the supplied candlestick chart image to provide context that raw data cannot see. "
+                        "RULES: "
+                        "1. Return ONLY strict JSON matching the VisualChartAnalysis schema. "
+                        "2. Focus heavily on identifying recent price rejections (e.g., long wicks), consolidation zones, and momentum shifts. "
+                        "3. Do not invent precise numeric prices; use visual estimation for 'support_zones' and 'resistance_zones' (e.g., 'Demand zone around recent swing low'). "
+                        "4. In 'observed_patterns', strictly name standard patterns (e.g., Bull Flag, Double Bottom, Bearish Engulfing) only if they are clearly visible. "
+                        "5. Evaluate if the visual volume trend validates the price action. "
+                        "Your visual context will serve as a crucial validation layer for algorithmic indicators."
+                    ),
+                    lang,
                 ),
             ),
             {

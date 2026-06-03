@@ -203,15 +203,16 @@ def run_offline_smoke_test() -> None:
             risk_manager=FakeRiskManager(),
         ).analyze_ticker("TEST", persist=False)
     )
-    boardroom_html = format_boardroom_result_html(result)
+    boardroom_html = format_boardroom_result_html(result, lang="en")
     assert result.final_synthesis.action == Action.BUY
     assert "Boardroom Signals" in boardroom_html
     print("Offline boardroom orchestration: OK")
     print("Offline smoke test completed successfully.")
 
 
-def run_live_test(ticker: str, article_urls: list[str], persist: bool) -> None:
+def run_live_test(ticker: str, article_urls: list[str], persist: bool, lang: str = "en") -> None:
     settings = get_settings()
+    settings.output_language = lang
     configure_logging(settings.log_level)
     if settings.openrouter_api_key is None:
         raise RuntimeError("OPENROUTER_API_KEY is required for live mode.")
@@ -222,7 +223,7 @@ def run_live_test(ticker: str, article_urls: list[str], persist: bool) -> None:
             persist=persist,
         )
     )
-    print(format_boardroom_result_html(result))
+    print(format_boardroom_result_html(result, lang=lang))
 
 
 def run_synthetic_backtest_generation(tickers: list[str]) -> None:
@@ -270,6 +271,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-persist", action="store_true", help="skip PostgreSQL persistence in live mode")
     parser.add_argument("--backtest-report", action="store_true", help="run backtest on historical predictions and save JSON report")
     parser.add_argument("--generate-synthetic-backtest", metavar="TICKER", nargs="+", help="generate synthetic historical signals for one or more tickers then backtest")
+    parser.add_argument("--lang", choices=["en", "th"], default="en", help="output language (en or th)")
     return parser.parse_args()
 
 
@@ -282,7 +284,7 @@ def main() -> None:
         run_backtest_report()
         return
     if args.live:
-        run_live_test(args.live.upper(), args.article_url, persist=not args.no_persist)
+        run_live_test(args.live.upper(), args.article_url, persist=not args.no_persist, lang=args.lang)
         return
     run_offline_smoke_test()
 
