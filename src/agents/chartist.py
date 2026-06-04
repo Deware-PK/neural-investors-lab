@@ -37,7 +37,9 @@ class ChartistAgent:
         symbol = ticker.upper()
         logger.info("Chartist started for %s", symbol)
         history = self.finance_api.fetch_historical_prices(symbol, period=period, interval=interval)
-        result = self.indicator_math.analyze_technical(symbol, history)
+        spy_rs_score = self._fetch_spy_rs_score(period=period, interval=interval)
+        benchmark_scores = [spy_rs_score] if spy_rs_score is not None else None
+        result = self.indicator_math.analyze_technical(symbol, history, benchmark_scores=benchmark_scores)
         try:
             mtf_bars = self.finance_api.fetch_multi_timeframe(symbol)
             mtf = self.indicator_math.analyze_multi_timeframe(
@@ -47,7 +49,7 @@ class ChartistAgent:
         except Exception:
             logger.warning("Multi-timeframe analysis failed for %s", symbol)
         logger.info(
-            "Chartist completed for %s: close=%.2f, trend=%s, rsi=%s, momentum=%s, volume=%s, volatility=%s, support=%s, resistance=%s, mtf=%s",
+            "Chartist completed for %s: close=%.2f, trend=%s, rsi=%s, momentum=%s, volume=%s, volatility=%s, support=%s, resistance=%s, mtf=%s, rs_rank=%s",
             symbol,
             result.close_price,
             result.moving_average.state,
@@ -58,6 +60,7 @@ class ChartistAgent:
             result.support_levels[:3] if result.support_levels else [],
             result.resistance_levels[:3] if result.resistance_levels else [],
             result.multi_timeframe.confluence_tag if result.multi_timeframe else "N/A",
+            f"{result.relative_strength.rs_rank}" if result.relative_strength else "N/A",
         )
         return result
 
@@ -123,6 +126,18 @@ class ChartistAgent:
             parsed.resistance_zones[:3] if parsed.resistance_zones else [],
         )
         return parsed
+
+    def _fetch_spy_rs_score(self, period: str = "2y", interval: str = "1d") -> float | None:
+        """Fetch SPY close prices and compute its RS score for use as S&P 500 benchmark."""
+        try:
+            spy_bars = self.finance_api.fetch_historical_prices("SPY", period=period, interval=interval)
+            spy_close = self.indicator_math.normalize_price_frame(spy_bars)["close"]
+            spy_signal = self.indicator_math._relative_strength(spy_close)
+            if spy_signal is not None:
+                return float(spy_signal.rs_score)
+        except Exception:
+            logger.warning("Failed to fetch SPY RS score for benchmark", exc_info=True)
+        return None
 
     def _get_chart_image_base64(self, ticker: str, period: str = "6mo", interval: str = "1d") -> str:
         symbol = ticker.upper()

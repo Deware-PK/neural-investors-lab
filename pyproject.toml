@@ -27,6 +27,7 @@ neural-bot = "bot:main"
 
 [dependency-groups]
 dev = [
+    "pypdf2>=3.0.1",
     "pytest>=9.0.3",
     "ruff>=0.15.15",
 ]
