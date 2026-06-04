@@ -10,6 +10,7 @@ DivergenceState = Literal["bullish_divergence", "bearish_divergence", "none"]
 VolatilityState = Literal["low", "normal", "high", "squeeze", "breakout"]
 TrendlineState = Literal["compressing", "expanding", "parallel", "undefined"]
 PatternSentiment = Literal["bullish", "bearish", "neutral"]
+SupertrendDirection = Literal["bullish", "bearish"]
 
 
 class MovingAverageAlignment(BaseModel):
@@ -76,6 +77,18 @@ class PatternSignal(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class SupertrendSignal(BaseModel):
+    direction: SupertrendDirection
+    supertrend_value: float = Field(gt=0)
+    just_flipped: bool = False
+    distance_pct: float | None = None
+    atr_period: int = Field(default=10, ge=1)
+    multiplier: float = Field(default=3.0, gt=0)
+    tag: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class TechnicalAnalysis(BaseModel):
     ticker: str = Field(min_length=1, max_length=16)
     close_price: float = Field(gt=0)
@@ -83,6 +96,7 @@ class TechnicalAnalysis(BaseModel):
     momentum: MomentumSignal
     volume: VolumeSignal
     volatility: VolatilitySignal
+    supertrend: SupertrendSignal | None = None
     trendline: TrendlineSignal | None = None
     pattern: PatternSignal | None = None
     support_levels: list[float] = Field(default_factory=list)

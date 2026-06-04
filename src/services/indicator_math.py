@@ -11,6 +11,8 @@ from src.models.technical_schema import (
     MomentumSignal,
     MovingAverageAlignment,
     PatternSignal,
+    SupertrendDirection,
+    SupertrendSignal,
     TechnicalAnalysis,
     TrendlineSignal,
     VolatilitySignal,
@@ -57,12 +59,14 @@ class IndicatorMath:
 
         trendline = self._fit_trendlines(high, low, close)
         pattern = self._detect_patterns(frame["open"], high, low, close)
+        supertrend = self._supertrend(high, low, close)
 
         tags = [
             ma_state,
             self._momentum_tag(self._latest(rsi), self._latest(macd_histogram), divergence),
             self._volume_tag(self._latest(mfi), volume_trend),
             self._volatility_tag(self._latest(atr), historical_volatility, bollinger_state),
+            supertrend.tag if supertrend else "supertrend:unknown",
         ]
 
         return TechnicalAnalysis(
@@ -96,6 +100,7 @@ class IndicatorMath:
                 bollinger_state=bollinger_state,
                 tag=tags[3],
             ),
+            supertrend=supertrend,
             support_levels=support_levels,
             resistance_levels=resistance_levels,
             trendline=trendline,
@@ -363,6 +368,77 @@ class IndicatorMath:
         previous_close = close.shift(1)
         true_range = pd.concat([(high - low), (high - previous_close).abs(), (low - previous_close).abs()], axis=1).max(axis=1)
         return true_range.ewm(alpha=1 / length, adjust=False).mean()
+
+    @staticmethod
+    def _supertrend(
+        high: pd.Series,
+        low: pd.Series,
+        close: pd.Series,
+        atr_period: int = 10,
+        multiplier: float = 3.0,
+    ) -> SupertrendSignal | None:
+        if len(close) < atr_period + 1:
+            return None
+
+        prev_close = close.shift(1)
+        tr = pd.concat([
+            high - low,
+            (high - prev_close).abs(),
+            (low - prev_close).abs(),
+        ], axis=1).max(axis=1)
+        atr = tr.ewm(alpha=1 / atr_period, adjust=False).mean()
+
+        hl2 = (high + low) / 2
+        basic_upper = hl2 + multiplier * atr
+        basic_lower = hl2 - multiplier * atr
+
+        upper = basic_upper.copy()
+        lower = basic_lower.copy()
+        direction = pd.Series(index=close.index, dtype=int)
+
+        for i in range(1, len(close)):
+            lower.iloc[i] = (
+                basic_lower.iloc[i]
+                if basic_lower.iloc[i] > lower.iloc[i - 1] or close.iloc[i - 1] < lower.iloc[i - 1]
+                else lower.iloc[i - 1]
+            )
+            upper.iloc[i] = (
+                basic_upper.iloc[i]
+                if basic_upper.iloc[i] < upper.iloc[i - 1] or close.iloc[i - 1] > upper.iloc[i - 1]
+                else upper.iloc[i - 1]
+            )
+            if close.iloc[i] > upper.iloc[i - 1]:
+                direction.iloc[i] = 1
+            elif close.iloc[i] < lower.iloc[i - 1]:
+                direction.iloc[i] = -1
+            else:
+                direction.iloc[i] = direction.iloc[i - 1] if i > 0 else 1
+
+        supertrend_line = pd.Series(index=close.index, dtype=float)
+        supertrend_line[direction == 1] = lower[direction == 1]
+        supertrend_line[direction == -1] = upper[direction == -1]
+
+        latest_dir = int(direction.iloc[-1])
+        prev_dir = int(direction.iloc[-2]) if len(direction) >= 2 else latest_dir
+        st_value = float(supertrend_line.iloc[-1])
+        latest_close = float(close.iloc[-1])
+
+        if pd.isna(st_value) or st_value <= 0:
+            return None
+
+        trend: SupertrendDirection = "bullish" if latest_dir == 1 else "bearish"
+        just_flipped = latest_dir != prev_dir
+        distance_pct = round(abs(latest_close - st_value) / st_value * 100, 2)
+
+        return SupertrendSignal(
+            direction=trend,
+            supertrend_value=round(st_value, 4),
+            just_flipped=just_flipped,
+            distance_pct=distance_pct,
+            atr_period=atr_period,
+            multiplier=multiplier,
+            tag=f"supertrend:{'flipped_' if just_flipped else ''}{trend}",
+        )
 
     @staticmethod
     def _historical_volatility(close: pd.Series, length: int = 30) -> float | None:
