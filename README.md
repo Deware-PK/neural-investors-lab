@@ -24,19 +24,19 @@ Unlike research prototypes that ask LLMs to calculate numbers, this system enfor
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                     BoardroomOrchestrator                     │
+┌─────────────────────────────────────────────────────────────┐
+│                     BoardroomOrchestrator                   │
 ├──────────┬──────────┬──────────┬──────────┬─────────────────┤
 │ Auditor  │ Chartist │Researcher│   CEO    │   Risk Manager  │
 │ (Python) │(Python + │  (LLM)   │  (LLM)   │  (Math + LLM)   │
 │          │ Vision)  │          │          │                 │
 ├──────────┴──────────┴──────────┴──────────┴─────────────────┤
-│                       Service Layer                           │
+│                       Service Layer                         │
 │  FinanceAPI  │  EdgarAPI  │  IndicatorMath  │  DeepResearch │
-├──────────────────────────────────────────────────────────────┤
-│                       Infrastructure                          │
-│  PostgreSQL (JSONB)  │  Redis (Cache)  │  OpenRouter         │
-└──────────────────────────────────────────────────────────────┘
+├─────────────────────────────────────────────────────────────┤
+│                       Infrastructure                        │
+│  PostgreSQL (JSONB)  │  Redis (Cache)  │  OpenRouter        │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ### Agents
@@ -167,16 +167,17 @@ Set `TELEGRAM_BOT_TOKEN` in `.env`, then run the bot to receive analysis via Tel
 
 ## Backtest Performance
 
-Results from synthetic signal generation across 16 tickers (101 trades, 5-year lookback):
+Results from synthetic signal generation across 24 tickers (181 trades, 5-year lookback):
 
 | Metric | Value |
 |---|---|
-| Win Rate | **52.48%** |
-| Win/Loss | 53W / 47L / 1 open |
-| Avg T+7 Return | 1.02% |
-| Avg Max Drawdown | -13.53% |
+| Win Rate | **56.91%** |
+| Win/Loss | 103W / 75L / 3 open |
+| Avg T+7 Return | 0.91% |
+| Avg T+30 Return | 4.55% |
+| Avg Max Drawdown | -11.37% |
 
-Signal filters: MA bullish alignment + RSI 25-65 + MACD histogram positive + volume bullish + no bearish candlestick patterns.
+Signal filters: MA bullish alignment + RSI 25-65 + MACD histogram positive + Supertrend bullish + volume bullish + no bearish candlestick patterns.
 
 ---
 
@@ -259,7 +260,7 @@ neural-investors-lab/
 
 | Feature | Neural Investors Lab |
 |---|---|
-| Pattern Detection | Deterministic Python (8+ candlestick patterns) |
+| Pattern Detection | Deterministic Python (8+ candlestick patterns) + Supertrend |
 | Trendline Analysis | numpy optimization |
 | Fundamental Analysis | ✅ Piotroski, PEG, Altman Z, ROE, D/E |
 | SEC EDGAR Integration | ✅ 8-K filings, Form 4 insider trades, annual financials |
@@ -268,11 +269,11 @@ neural-investors-lab/
 | Risk Management | ✅ Kelly, VaR, ATR-adjusted sizing, CRO review |
 | Debate Mechanism | ✅ Contradiction detection + deep-dive re-research |
 | Persistent Storage | ✅ PostgreSQL (JSONB) + Redis |
-| Backtesting | ✅ Synthetic signals + analytics |
+| Backtesting | ✅ Synthetic signals, Supertrend filter, analytics + JSON reports |
 | Telegram + CLI | ✅ |
 | Rate-Limit Protection | ✅ Configurable throttling + tiered cache |
 | Debug Observability | ✅ DEBUG_PROMPTS + SHOW_AI_DATA modes |
-| Cost per Analysis | ~$0.01-0.03 |
+| Cost per Analysis | ~$0.01-0.03 (Depends on models used) |
 
 ---
 
