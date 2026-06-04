@@ -27,6 +27,14 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "bot_help": "<b>Commands</b>\n<code>/analyze AAPL</code>\n<code>/analyze AAPL https://example.com/news</code>",
         "bot_analyze_usage": "Usage: <code>/analyze TICKER [article_url ...]</code>",
         "bot_analyze_running": "Running boardroom analysis for <b>{ticker}</b>...",
+        "bot_button_start": "🚀 Start Analysis",
+        "bot_ask_ticker": "Which ticker would you like to analyze?",
+        "bot_ask_language": "Select output language:",
+        "bot_button_thai": "🇹🇭 Thai",
+        "bot_button_english": "🇬🇧 English",
+        "bot_invalid_ticker": "Please enter a valid ticker symbol (e.g., AAPL, NVDA).",
+        "bot_cancel": "Analysis cancelled.",
+        "bot_error": "❌ <b>Analysis failed</b>\nSomething went wrong during the boardroom review.\nPlease try again or use <code>/analyze TICKER</code>.",
         # LLM prompt suffix
         "llm_prompt_suffix": (
             "All narrative text (thesis, key_risks, rationale, summary, catalysts, concerns, observed_patterns) "
@@ -57,10 +65,22 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "bot_help": "<b>คำสั่ง</b>\n<code>/analyze AAPL</code>\n<code>/analyze AAPL https://example.com/news</code>",
         "bot_analyze_usage": "การใช้งาน: <code>/analyze TICKER [article_url ...]</code>",
         "bot_analyze_running": "กำลังวิเคราะห์ <b>{ticker}</b>...",
+        "bot_button_start": "🚀 เริ่มต้นวิเคราะห์",
+        "bot_ask_ticker": "หุ้นอะไรที่ต้องการวิเคราะห์?",
+        "bot_ask_language": "เลือกภาษาสำหรับผลลัพธ์:",
+        "bot_button_thai": "🇹🇭 ไทย",
+        "bot_button_english": "🇬🇧 English",
+        "bot_invalid_ticker": "กรุณากรอกชื่อหุ้นที่ถูกต้อง (เช่น AAPL, NVDA)",
+        "bot_cancel": "ยกเลิกการวิเคราะห์แล้ว",
+        "bot_error": "❌ <b>วิเคราะห์ล้มเหลว</b>\nเกิดข้อผิดพลาดระหว่างการวิเคราะห์\nกรุณาลองใหม่อีกครั้งหรือใช้ <code>/analyze TICKER</code>",
         # LLM prompt suffix
         "llm_prompt_suffix": (
-            "ตอบเป็นภาษาไทยทั้งหมด ข้อความที่เป็น narrative (thesis, key_risks, rationale, summary, catalysts, concerns, observed_patterns) "
-            "ต้องเขียนเป็นภาษาไทย ส่วน JSON keys และ enum values คงเป็นภาษาอังกฤษ"
+            "CRITICAL LANGUAGE RULE: You MUST write ALL narrative text in Thai language only. "
+            "This includes thesis, key_risks, rationale, summary, catalysts, concerns, and observed_patterns. "
+            "DO NOT write any narrative in English. Write naturally in Thai as if explaining to a Thai investor. "
+            "Example of CORRECT thesis: 'หุ้นตัวนี้มีแนวโน้มขาขึ้นจากสัญญาณทางเทคนิคที่แข็งแกร่ง' "
+            "Example of WRONG thesis: 'The stock shows strong technical signals' — NEVER do this. "
+            "JSON keys and enum values MUST remain in English."
         ),
     },
 }
@@ -77,8 +97,8 @@ def get_prompt_suffix(lang: str) -> str:
 
 
 def localize_prompt(system_content: str, lang: str) -> str:
-    """Append language instruction to an LLM system prompt when lang is not English."""
+    """Prepend language instruction to an LLM system prompt when lang is not English."""
     if lang == "en":
         return system_content
     suffix = get_prompt_suffix(lang)
-    return f"{system_content}\nLANGUAGE RULE: {suffix}"
+    return f"LANGUAGE RULE (READ FIRST): {suffix}\n\n{system_content}"

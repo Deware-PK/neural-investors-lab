@@ -21,6 +21,52 @@ def parse_json_model(content: str, model_type: type[ModelT]) -> ModelT:
     return model_type.model_validate(payload)
 
 
+def _repair_json(text: str) -> str:
+    """Repair common LLM JSON malformations (unescaped newlines/quotes, unclosed strings/braces)."""
+    result: list[str] = []
+    in_string = False
+    escape_next = False
+    i = 0
+    while i < len(text):
+        char = text[i]
+        if escape_next:
+            result.append(char)
+            escape_next = False
+            i += 1
+            continue
+        if char == "\\":
+            result.append(char)
+            escape_next = True
+            i += 1
+            continue
+        if char == '"':
+            in_string = not in_string
+            result.append(char)
+            i += 1
+            continue
+        if char == "\n" and in_string:
+            result.append("\\n")
+            i += 1
+            continue
+        result.append(char)
+        i += 1
+
+    repaired = "".join(result)
+    if in_string:
+        repaired += '"'
+
+    # Close unclosed braces
+    open_braces = repaired.count("{") - repaired.count("}")
+    if open_braces > 0:
+        repaired += "}" * open_braces
+
+    # Remove trailing commas before closing braces/brackets
+    repaired = re.sub(r",\s*}", "}", repaired)
+    repaired = re.sub(r",\s*]", "]", repaired)
+
+    return repaired
+
+
 def extract_json_object(content: str) -> dict[str, Any]:
     stripped = content.strip()
     fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", stripped, flags=re.DOTALL)
@@ -31,7 +77,19 @@ def extract_json_object(content: str) -> dict[str, Any]:
         end = stripped.rfind("}")
         if start >= 0 and end >= start:
             stripped = stripped[start : end + 1]
-    parsed = json.loads(stripped)
+
+    # Try strict parse first
+    try:
+        parsed = json.loads(stripped)
+    except json.JSONDecodeError:
+        # Attempt repair for common LLM malformations (Thai text, unescaped chars, etc.)
+        repaired = _repair_json(stripped)
+        try:
+            parsed = json.loads(repaired)
+        except json.JSONDecodeError as exc:
+            msg = f"Could not parse LLM JSON response even after repair: {exc}"
+            raise ValueError(msg) from exc
+
     if not isinstance(parsed, dict):
         msg = "Expected a JSON object from LLM response"
         raise ValueError(msg)
