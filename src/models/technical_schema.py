@@ -89,6 +89,18 @@ class SupertrendSignal(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class RelativeStrengthSignal(BaseModel):
+    rs_score: float
+    rs_rank: int = Field(ge=0, le=100)
+    perf_3m: float | None = None
+    perf_6m: float | None = None
+    perf_9m: float | None = None
+    perf_12m: float | None = None
+    tag: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class TechnicalAnalysis(BaseModel):
     ticker: str = Field(min_length=1, max_length=16)
     close_price: float = Field(gt=0)
@@ -97,6 +109,7 @@ class TechnicalAnalysis(BaseModel):
     volume: VolumeSignal
     volatility: VolatilitySignal
     supertrend: SupertrendSignal | None = None
+    relative_strength: RelativeStrengthSignal | None = None
     trendline: TrendlineSignal | None = None
     pattern: PatternSignal | None = None
     support_levels: list[float] = Field(default_factory=list)

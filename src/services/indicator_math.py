@@ -11,6 +11,7 @@ from src.models.technical_schema import (
     MomentumSignal,
     MovingAverageAlignment,
     PatternSignal,
+    RelativeStrengthSignal,
     SupertrendDirection,
     SupertrendSignal,
     TechnicalAnalysis,
@@ -26,7 +27,12 @@ except ImportError:
 
 
 class IndicatorMath:
-    def analyze_technical(self, ticker: str, history: pd.DataFrame | list[PriceBar]) -> TechnicalAnalysis:
+    def analyze_technical(
+        self,
+        ticker: str,
+        history: pd.DataFrame | list[PriceBar],
+        benchmark_scores: list[float] | None = None,
+    ) -> TechnicalAnalysis:
         frame = self.normalize_price_frame(history)
         if frame.empty or len(frame) < 30:
             msg = "At least 30 price bars are required for technical analysis"
@@ -60,6 +66,7 @@ class IndicatorMath:
         trendline = self._fit_trendlines(high, low, close)
         pattern = self._detect_patterns(frame["open"], high, low, close)
         supertrend = self._supertrend(high, low, close)
+        relative_strength = self._relative_strength(close, benchmark_scores)
 
         tags = [
             ma_state,
@@ -67,6 +74,7 @@ class IndicatorMath:
             self._volume_tag(self._latest(mfi), volume_trend),
             self._volatility_tag(self._latest(atr), historical_volatility, bollinger_state),
             supertrend.tag if supertrend else "supertrend:unknown",
+            relative_strength.tag if relative_strength else "rs_rank:unknown",
         ]
 
         return TechnicalAnalysis(
@@ -101,6 +109,7 @@ class IndicatorMath:
                 tag=tags[3],
             ),
             supertrend=supertrend,
+            relative_strength=relative_strength,
             support_levels=support_levels,
             resistance_levels=resistance_levels,
             trendline=trendline,
@@ -438,6 +447,60 @@ class IndicatorMath:
             atr_period=atr_period,
             multiplier=multiplier,
             tag=f"supertrend:{'flipped_' if just_flipped else ''}{trend}",
+        )
+
+    @staticmethod
+    def _relative_strength(
+        close: pd.Series,
+        benchmark_scores: list[float] | None = None,
+    ) -> RelativeStrengthSignal | None:
+        """Calculate IBD-style RS score and rank."""
+        if len(close) < 63:
+            return None
+
+        def _perf(bars: int) -> float | None:
+            if len(close) < bars + 1:
+                return None
+            start = float(close.iloc[-(bars + 1)])
+            end = float(close.iloc[-1])
+            if start <= 0:
+                return None
+            return round((end - start) / start * 100, 2)
+
+        perf_3m = _perf(63)
+        perf_6m = _perf(126)
+        perf_9m = _perf(189)
+        perf_12m = _perf(252)
+
+        weights = []
+        values = []
+        for w, v in [(0.4, perf_3m), (0.2, perf_6m), (0.2, perf_9m), (0.2, perf_12m)]:
+            if v is not None:
+                weights.append(w)
+                values.append(v)
+
+        if not values:
+            return None
+
+        total_weight = sum(weights)
+        rs_score = round(sum(w * v for w, v in zip(weights, values)) / total_weight, 4)
+
+        if benchmark_scores and len(benchmark_scores) > 0:
+            below = sum(1 for s in benchmark_scores if s < rs_score)
+            rs_rank = round(below / len(benchmark_scores) * 100)
+        else:
+            rs_rank = 50
+
+        rs_rank = max(0, min(100, rs_rank))
+
+        return RelativeStrengthSignal(
+            rs_score=rs_score,
+            rs_rank=rs_rank,
+            perf_3m=perf_3m,
+            perf_6m=perf_6m,
+            perf_9m=perf_9m,
+            perf_12m=perf_12m,
+            tag=f"rs_rank:{rs_rank}|score:{rs_score}",
         )
 
     @staticmethod

@@ -24,3 +24,9 @@ dependencies = [
 [project.scripts]
 neural-investors-lab = "main:main"
 neural-bot = "bot:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+    "ruff>=0.15.15",
+]
