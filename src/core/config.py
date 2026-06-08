@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     debug_prompts: bool = Field(default=False, alias="DEBUG_PROMPTS")
     show_ai_data: bool = Field(default=False, alias="SHOW_AI_DATA")
     output_language: str = Field(default="en", alias="OUTPUT_LANGUAGE")
+    tavily_api_key: SecretStr | None = Field(default=None, alias="TAVILY_API_KEY")
+    advanced_search: bool = Field(default=False, alias="ADVANCED_SEARCH")
+    tavily_max_results: int = Field(default=5, ge=1, le=10, alias="TAVILY_MAX_RESULTS")
+    tavily_search_depth: Literal["ultra-fast", "basic", "fast", "advanced"] = Field(
+        default="fast", alias="TAVILY_SEARCH_DEPTH"
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",

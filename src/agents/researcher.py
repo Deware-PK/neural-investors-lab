@@ -8,6 +8,7 @@ from src.models.edgar_schema import EdgarBundle
 from src.models.research_schema import NewsArticle, ResearchFinding
 from src.services.deep_research import DeepResearchService
 from src.services.finance_api import FinanceAPI
+from src.services.tavily_research import TavilyResearchService
 
 
 logger = logging.getLogger(__name__)
@@ -19,17 +20,29 @@ class ResearcherAgent:
         llm_client: OpenRouterClient | None = None,
         deep_research: DeepResearchService | None = None,
         finance_api: FinanceAPI | None = None,
+        tavily: TavilyResearchService | None = None,
         settings: Settings | None = None,
     ) -> None:
         self.settings = settings or get_settings()
         self.llm_client = llm_client
         self.deep_research = deep_research or DeepResearchService(settings=self.settings)
         self.finance_api = finance_api or FinanceAPI(settings=self.settings)
+        self.tavily = tavily
 
     def analyze(self, ticker: str, article_urls: list[str] | None = None, context: str | None = None, edgar_bundle: EdgarBundle | None = None) -> ResearchFinding:
         symbol = ticker.upper()
         logger.info("Researcher started for %s", symbol)
         articles = self.deep_research.extract_articles(article_urls) if article_urls else self.finance_api.fetch_ticker_news(symbol)
+        if self.settings.advanced_search and self.tavily is not None:
+            tavily_articles = self.tavily.search_news(symbol)
+            existing_urls = {a.url for a in articles}
+            new_articles = [a for a in tavily_articles if a.url not in existing_urls]
+            if new_articles:
+                logger.info(
+                    "Advanced search added %d new articles for %s (total: %d)",
+                    len(new_articles), symbol, len(articles) + len(new_articles),
+                )
+                articles = articles + new_articles
         logger.info("Researcher fetched %d articles for %s", len(articles), symbol)
         if articles:
             for i, article in enumerate(articles, 1):

@@ -24,6 +24,7 @@ from src.services.deep_research import DeepResearchService
 from src.services.edgar_api import EdgarAPI
 from src.services.finance_api import FinanceAPI
 from src.services.indicator_math import IndicatorMath
+from src.services.tavily_research import TavilyResearchService
 
 
 logger = logging.getLogger(__name__)
@@ -63,7 +64,17 @@ class BoardroomOrchestrator:
         deep_research = DeepResearchService(redis_client=redis_client, settings=self.settings)
         self.auditor = auditor or AuditorAgent(finance_api=finance_api, indicator_math=indicator_math)
         self.chartist = chartist or ChartistAgent(finance_api=finance_api, indicator_math=indicator_math, settings=self.settings)
-        self.researcher = researcher or ResearcherAgent(deep_research=deep_research, finance_api=finance_api, settings=self.settings)
+        tavily = (
+            TavilyResearchService(settings=self.settings)
+            if self.settings.advanced_search
+            else None
+        )
+        self.researcher = researcher or ResearcherAgent(
+            deep_research=deep_research,
+            finance_api=finance_api,
+            tavily=tavily,
+            settings=self.settings,
+        )
         self.chief_strategist = chief_strategist or ChiefStrategistAgent(settings=self.settings)
         self.risk_manager = risk_manager or RiskManagerAgent(settings=self.settings)
         self.finance_api = finance_api

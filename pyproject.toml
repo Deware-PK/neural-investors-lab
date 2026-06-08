@@ -19,11 +19,15 @@ dependencies = [
     "python-telegram-bot>=22.7",
     "mplfinance>=0.12.10b0",
     "edgartools>=5.34.0",
+    "tavily-python>=0.7.25",
 ]
 
 [project.scripts]
 neural-investors-lab = "main:main"
 neural-bot = "bot:main"
+
+[project.optional-dependencies]
+advanced-search = ["tavily-python>=0.5.0"]
 
 [dependency-groups]
 dev = [
