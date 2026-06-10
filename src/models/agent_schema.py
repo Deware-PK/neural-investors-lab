@@ -3,6 +3,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from src.models.synthesis_schema import Action, EvidenceItem, RiskDecision
+from src.models.vi_schema import DecisionState
 
 
 class ConflictAssessment(BaseModel):
@@ -28,6 +29,9 @@ class StrategyDraft(BaseModel):
     key_risks: list[str] = Field(default_factory=list)
     evidence: list[EvidenceItem] = Field(default_factory=list)
     conflict_assessment: ConflictAssessment | None = None
+    decision_state: DecisionState | None = None
+    upgrade_trigger: str | None = None
+    downgrade_trigger: str | None = None
 
     model_config = ConfigDict(extra="forbid")
 

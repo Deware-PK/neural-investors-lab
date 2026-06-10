@@ -8,6 +8,7 @@ from src.models.agent_schema import RiskReview, StrategyDraft
 from src.models.risk_schema import RiskAssessment
 from src.models.synthesis_schema import Action, FinalSynthesis, RiskDecision
 from src.models.technical_schema import TechnicalAnalysis
+from src.models.vi_schema import DecisionState, MandateContext
 
 
 logger = logging.getLogger(__name__)
@@ -20,11 +21,13 @@ class RiskManagerAgent:
         settings: Settings | None = None,
         max_position_size_pct: float = 10,
         max_value_at_risk_pct: float = 2,
+        mandate: MandateContext | None = None,
     ) -> None:
         self.settings = settings or get_settings()
         self.llm_client = llm_client
         self.max_position_size_pct = max_position_size_pct
         self.max_value_at_risk_pct = max_value_at_risk_pct
+        self.mandate = mandate
 
     def finalize(self, draft: StrategyDraft, technicals: TechnicalAnalysis | None = None) -> FinalSynthesis:
         logger.info("Risk Manager started for %s", draft.ticker)
@@ -43,7 +46,8 @@ class RiskManagerAgent:
         return final
 
     def calculate_risk(self, draft: StrategyDraft, technicals: TechnicalAnalysis | None = None) -> RiskAssessment:
-        if draft.action not in {Action.BUY, Action.ACCUMULATE} or draft.entry_price is None or draft.stop_loss is None:
+        is_vi = self.mandate is not None and self.mandate.investment_style == "deep_value_vi"
+        if not is_vi and draft.action not in {Action.BUY, Action.ACCUMULATE}:
             return RiskAssessment(
                 ticker=draft.ticker,
                 position_size_pct=0,
@@ -53,6 +57,9 @@ class RiskManagerAgent:
                 risk_rating="low",
                 veto=False,
             )
+
+        if is_vi:
+            return self._vi_sizing(draft, technicals)
 
         risk_per_share_pct = ((draft.entry_price - draft.stop_loss) / draft.entry_price) * 100
         reward_risk = self._reward_risk_ratio(draft)
@@ -99,11 +106,27 @@ class RiskManagerAgent:
 
         client = self.llm_client or get_openrouter_client(self.settings)
         lang = self.settings.output_language
+        is_vi = self.mandate is not None and self.mandate.investment_style == "deep_value_vi"
+        vi_prefix = ""
+        if is_vi:
+            vi_prefix = (
+                f"ACTIVE MANDATE: {self.mandate.model_dump(mode='json')}\n"
+                "You are the Chief Risk Officer (CRO) in a multi-agent investment system. "
+                "Your role is to translate the CEO's mandate-aware decision into a position-sizing and risk-governance plan. "
+                "You protect capital, but you must not override the active mandate without a hard block.\n"
+                "Primary rule: In deep_value_vi mode, your job is not to eliminate all drawdown risk. "
+                "Your job is to prevent thesis-breaking overexposure.\n"
+                "Do not set position to 0% solely because of bearish technicals. "
+                "Kelly fraction may inform caps, but must not be treated as absolute truth for long-horizon discretionary value investing. "
+                "VaR and ATR can reduce initial sizing, but should not auto-reject intact long-term theses. "
+                "Prefer staged buying and thesis-based re-evaluation over hard stop-losses for VI mode. "
+                "Use hard rejection only for true hard-block conditions.\n"
+            )
         messages = [
             ChatMessage(
                 role="system",
                 content=localize_prompt(
-                    (
+                    vi_prefix + (
                         "You are the Chief Risk Officer (CRO) of a strict quantitative trading firm. Your ONLY job is to protect the portfolio from ruin. "
                         "You review the StrategyDraft and the Python-calculated RiskAssessment. "
                         "RULES: "
@@ -138,8 +161,8 @@ class RiskManagerAgent:
             review = review.model_copy(update={"approved_position_size_pct": approved_size, "risk_decision": RiskDecision.ADJUSTED})
         return review
 
-    @staticmethod
-    def _build_final_synthesis(draft: StrategyDraft, risk_assessment: RiskAssessment, review: RiskReview) -> FinalSynthesis:
+    def _build_final_synthesis(self, draft: StrategyDraft, risk_assessment: RiskAssessment, review: RiskReview) -> FinalSynthesis:
+        is_vi = self.mandate is not None and self.mandate.investment_style == "deep_value_vi"
         action = draft.action
         position_size = review.approved_position_size_pct
         risk_decision = review.risk_decision
@@ -162,6 +185,55 @@ class RiskManagerAgent:
             thesis=thesis,
             key_risks=key_risks,
             evidence=draft.evidence,
+            decision_state=draft.decision_state,
+            upgrade_trigger=draft.upgrade_trigger,
+            downgrade_trigger=draft.downgrade_trigger,
+            stop_loss_policy="soft_thesis_stop" if is_vi else None,
+            add_on_policy="Add only on improved valuation or confirmed thesis progress." if is_vi else None,
+            hard_block_risk=risk_assessment.veto_reason if risk_assessment.veto else None,
+        )
+
+    def _vi_sizing(self, draft: StrategyDraft, technicals: TechnicalAnalysis | None = None) -> RiskAssessment:
+        if self.mandate is None:
+            return RiskAssessment(
+                ticker=draft.ticker, position_size_pct=0, kelly_fraction=0,
+                value_at_risk_pct=0, max_drawdown_pct=0, risk_rating="low", veto=False,
+            )
+        ds = draft.decision_state
+        if ds is None or ds == DecisionState.AVOID:
+            return RiskAssessment(
+                ticker=draft.ticker, position_size_pct=0, kelly_fraction=0,
+                value_at_risk_pct=0, max_drawdown_pct=0, risk_rating="low", veto=False,
+            )
+        if ds == DecisionState.WATCH:
+            return RiskAssessment(
+                ticker=draft.ticker, position_size_pct=0, kelly_fraction=0,
+                value_at_risk_pct=0, max_drawdown_pct=0, risk_rating="low", veto=False,
+            )
+        if ds == DecisionState.PROBE:
+            pct = min(0.5, self.mandate.max_initial_probe_pct)
+            return RiskAssessment(
+                ticker=draft.ticker, position_size_pct=round(pct, 2), kelly_fraction=0,
+                value_at_risk_pct=round(pct * 0.05, 2), max_drawdown_pct=5,
+                risk_rating="low", veto=False,
+            )
+        if ds == DecisionState.ACCUMULATE:
+            pct = min(1.5, self.mandate.max_total_position_pct)
+            return RiskAssessment(
+                ticker=draft.ticker, position_size_pct=round(pct, 2), kelly_fraction=0,
+                value_at_risk_pct=round(pct * 0.05, 2), max_drawdown_pct=5,
+                risk_rating="moderate", veto=False,
+            )
+        if ds == DecisionState.HIGH_CONVICTION_ACCUMULATE:
+            pct = min(3.0, self.mandate.max_total_position_pct)
+            return RiskAssessment(
+                ticker=draft.ticker, position_size_pct=round(pct, 2), kelly_fraction=0,
+                value_at_risk_pct=round(pct * 0.05, 2), max_drawdown_pct=5,
+                risk_rating="moderate", veto=False,
+            )
+        return RiskAssessment(
+            ticker=draft.ticker, position_size_pct=0, kelly_fraction=0,
+            value_at_risk_pct=0, max_drawdown_pct=0, risk_rating="low", veto=False,
         )
 
     @staticmethod

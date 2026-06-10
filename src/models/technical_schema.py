@@ -11,6 +11,11 @@ VolatilityState = Literal["low", "normal", "high", "squeeze", "breakout"]
 TrendlineState = Literal["compressing", "expanding", "parallel", "undefined"]
 PatternSentiment = Literal["bullish", "bearish", "neutral"]
 SupertrendDirection = Literal["bullish", "bearish"]
+VI_DRAWDOWN = Literal["mild", "moderate", "severe"]
+VI_SUPPORT_QUALITY = Literal["weak", "moderate", "strong"]
+VI_REVERSAL = Literal["none", "early", "confirmed"]
+VI_RISK_LEVEL = Literal["low", "medium", "high"]
+VI_ENTRY_MODE = Literal["wait", "probe_now", "staggered_buy", "buy_confirmation_breakout"]
 
 
 class MovingAverageAlignment(BaseModel):
@@ -116,5 +121,11 @@ class TechnicalAnalysis(BaseModel):
     resistance_levels: list[float] = Field(default_factory=list)
     multi_timeframe: MultiTimeframeConfluence | None = None
     tags: list[str] = Field(default_factory=list)
+    entry_timing_score: float | None = Field(default=None, ge=0, le=10)
+    drawdown_severity: VI_DRAWDOWN | None = None
+    support_quality: VI_SUPPORT_QUALITY | None = None
+    reversal_confirmation: VI_REVERSAL | None = None
+    risk_of_further_underwater_entry: VI_RISK_LEVEL | None = None
+    preferred_entry_mode: VI_ENTRY_MODE | None = None
 
     model_config = ConfigDict(extra="forbid")

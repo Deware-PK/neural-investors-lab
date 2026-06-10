@@ -5,6 +5,9 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
 
 SentimentLabel = Literal["bullish", "bearish", "neutral", "mixed"]
+VI_CATALYST_STRENGTH = Literal["none", "weak", "moderate", "strong"]
+VI_INSIDER_SIGNAL = Literal["bullish", "neutral", "bearish"]
+VI_RISK_LEVEL = Literal["low", "medium", "high"]
 
 
 class NewsArticle(BaseModel):
@@ -25,6 +28,11 @@ class ResearchFinding(BaseModel):
     catalysts: list[str] = Field(default_factory=list)
     concerns: list[str] = Field(default_factory=list)
     articles: list[NewsArticle] = Field(default_factory=list)
+    near_term_catalyst_strength: VI_CATALYST_STRENGTH | None = None
+    long_term_catalyst_strength: VI_CATALYST_STRENGTH | None = None
+    insider_signal: VI_INSIDER_SIGNAL | None = None
+    thesis_tailwind: VI_CATALYST_STRENGTH | None = None
+    narrative_risk: VI_RISK_LEVEL | None = None
 
     model_config = ConfigDict(extra="forbid")
 

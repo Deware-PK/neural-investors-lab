@@ -3,6 +3,7 @@ from html import escape
 from src.core.i18n import get_text
 from src.main_orchestrator import BoardroomResult
 from src.models.synthesis_schema import Action, FinalSynthesis, RiskDecision
+from src.models.vi_schema import DecisionState
 
 
 def _sanitize_text(text: str) -> str:
@@ -33,6 +34,14 @@ RISK_ICON = {
     RiskDecision.VETOED: "❌",
 }
 
+DECISION_ICON = {
+    DecisionState.AVOID: "⛔",
+    DecisionState.WATCH: "👀",
+    DecisionState.PROBE: "🔍",
+    DecisionState.ACCUMULATE: "📥",
+    DecisionState.HIGH_CONVICTION_ACCUMULATE: "🚀",
+}
+
 _ACTION_EMOJI_MAP = {
     Action.BUY: "🚀",
     Action.ACCUMULATE: "📥",
@@ -60,6 +69,9 @@ def format_final_synthesis_html(final: FinalSynthesis, persisted_record_id: str 
 
     # Header
     lines.append(f"{action_icon} <b>{escape(final.ticker)}</b>  {action_emoji} <b>{escape(final.action.value.upper())}</b>")
+    if final.decision_state is not None:
+        d_icon = DECISION_ICON.get(final.decision_state, "❓")
+        lines.append(f"   {d_icon} <b>VI:</b> {final.decision_state.value.upper()}")
     lines.append(_DIVIDER)
 
     # Key metrics
@@ -86,6 +98,17 @@ def format_final_synthesis_html(final: FinalSynthesis, persisted_record_id: str 
         lines.append(f"⚠️ <b>{get_text(lang, 'key_risks')}</b>")
         for risk in final.key_risks:
             lines.append(f"  • {escape(risk)}")
+        lines.append("")
+
+    if final.upgrade_trigger:
+        lines.append(f"🔼 <b>Upgrade:</b> {escape(final.upgrade_trigger)}")
+    if final.downgrade_trigger:
+        lines.append(f"🔽 <b>Downgrade:</b> {escape(final.downgrade_trigger)}")
+    if final.stop_loss_policy:
+        lines.append(f"🛑 <b>Stop Policy:</b> {escape(final.stop_loss_policy)}")
+    if final.add_on_policy:
+        lines.append(f"➕ <b>Add-On:</b> {escape(final.add_on_policy)}")
+    if final.upgrade_trigger or final.downgrade_trigger or final.stop_loss_policy or final.add_on_policy:
         lines.append("")
 
     # Evidence

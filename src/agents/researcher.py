@@ -9,6 +9,7 @@ from src.models.research_schema import NewsArticle, ResearchFinding
 from src.services.deep_research import DeepResearchService
 from src.services.finance_api import FinanceAPI
 from src.services.tavily_research import TavilyResearchService
+from src.models.vi_schema import MandateContext
 
 
 logger = logging.getLogger(__name__)
@@ -21,6 +22,7 @@ class ResearcherAgent:
         deep_research: DeepResearchService | None = None,
         finance_api: FinanceAPI | None = None,
         tavily: TavilyResearchService | None = None,
+        mandate: MandateContext | None = None,
         settings: Settings | None = None,
     ) -> None:
         self.settings = settings or get_settings()
@@ -28,6 +30,7 @@ class ResearcherAgent:
         self.deep_research = deep_research or DeepResearchService(settings=self.settings)
         self.finance_api = finance_api or FinanceAPI(settings=self.settings)
         self.tavily = tavily
+        self.mandate = mandate
 
     def analyze(self, ticker: str, article_urls: list[str] | None = None, context: str | None = None, edgar_bundle: EdgarBundle | None = None) -> ResearchFinding:
         symbol = ticker.upper()
@@ -98,11 +101,23 @@ class ResearcherAgent:
             )
 
         lang = self.settings.output_language
+        vi_prefix = ""
+        if self.mandate is not None and self.mandate.investment_style == "deep_value_vi":
+            vi_prefix = (
+                f"ACTIVE MANDATE: {self.mandate.model_dump(mode='json')}\n"
+                "You are in deep_value_vi mode. "
+                "Distinguish short-term news flow from long-duration structural catalysts. "
+                "Distinguish routine insider selling from thesis-damaging insider behavior. "
+                "Do not describe a company as having no catalyst if it has credible long-term tailwinds but lacks a near-term trigger. "
+                "Emphasize whether the market may be underpricing a multi-year thesis. "
+                "'No near-term catalyst' is not equal to 'no catalyst'. "
+                "Insider selling should be contextualized: size, frequency, concentration, and whether offset by ownership alignment.\n"
+            )
         messages = [
             ChatMessage(
                 role="system",
                 content=localize_prompt(
-                    (
+                    vi_prefix + (
                         "You are a Senior Quantitative News Analyst. Your job is to filter out market noise and identify true actionable catalysts from the provided news snippets. "
                         "RULES: "
                         "1. Return ONLY strict JSON matching the ResearchFinding schema. "

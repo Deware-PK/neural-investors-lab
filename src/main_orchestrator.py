@@ -25,6 +25,7 @@ from src.services.edgar_api import EdgarAPI
 from src.services.finance_api import FinanceAPI
 from src.services.indicator_math import IndicatorMath
 from src.services.tavily_research import TavilyResearchService
+from src.models.vi_schema import MandateContext
 
 
 logger = logging.getLogger(__name__)
@@ -69,14 +70,35 @@ class BoardroomOrchestrator:
             if self.settings.advanced_search
             else None
         )
+        mandate = (
+            MandateContext(
+                investment_style=self.settings.investment_style,
+                time_horizon_days=540,
+                allow_countertrend_entries=True,
+                technicals_role="timing_only",
+                entry_mode="staggered_dca",
+                capital_preservation_priority="medium",
+                max_initial_probe_pct=0.5,
+                max_total_position_pct=3.0,
+            )
+            if self.settings.investment_style == "deep_value_vi"
+            else None
+        )
         self.researcher = researcher or ResearcherAgent(
             deep_research=deep_research,
             finance_api=finance_api,
             tavily=tavily,
+            mandate=mandate,
             settings=self.settings,
         )
-        self.chief_strategist = chief_strategist or ChiefStrategistAgent(settings=self.settings)
-        self.risk_manager = risk_manager or RiskManagerAgent(settings=self.settings)
+        self.chief_strategist = chief_strategist or ChiefStrategistAgent(
+            settings=self.settings,
+            mandate=mandate,
+        )
+        self.risk_manager = risk_manager or RiskManagerAgent(
+            settings=self.settings,
+            mandate=mandate,
+        )
         self.finance_api = finance_api
         self.edgar_api = EdgarAPI(redis_client=redis_client, settings=self.settings)
         self.session_factory = session_factory

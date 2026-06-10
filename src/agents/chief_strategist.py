@@ -12,6 +12,7 @@ from src.models.research_schema import ResearchFinding
 from src.models.synthesis_schema import Action
 from src.models.technical_schema import TechnicalAnalysis
 from src.models.vision_schema import VisualChartAnalysis
+from src.models.vi_schema import DecisionState, MandateContext
 
 
 logger = logging.getLogger(__name__)
@@ -23,10 +24,12 @@ class ChiefStrategistAgent:
         llm_client: OpenRouterClient | None = None,
         settings: Settings | None = None,
         researcher: ResearcherAgent | None = None,
+        mandate: MandateContext | None = None,
     ) -> None:
         self.settings = settings or get_settings()
         self.llm_client = llm_client
         self.researcher = researcher
+        self.mandate = mandate
 
     def identify_contradictions(
         self,
@@ -101,11 +104,37 @@ class ChiefStrategistAgent:
     ) -> StrategyDraft:
         client = self.llm_client or get_openrouter_client(self.settings)
         lang = self.settings.output_language
+        is_vi = self.mandate is not None and self.mandate.investment_style == "deep_value_vi"
+        vi_prefix = ""
+        if is_vi:
+            vi_prefix = (
+                f"ACTIVE MANDATE: {self.mandate.model_dump(mode='json')}\n"
+                "You are the Chief Strategist (CEO) in a multi-agent investment system. "
+                "You synthesize Auditor, Chartist, and Researcher outputs into a mandate-aware investment decision. "
+                "You are not a short-term trader unless the mandate says so.\n"
+                "Decision philosophy in deep_value_vi mode:\n"
+                "1. Fundamental survivability and valuation dominate short-term price action.\n"
+                "2. Technicals determine entry quality, not long-term thesis validity.\n"
+                "3. A downtrend does not invalidate a value thesis by itself.\n"
+                "4. Use staged decisions rather than categorical avoidance when the thesis is intact but timing is weak.\n"
+                "5. Avoid only when hard blocks exist or when long-term expected value is unattractive.\n"
+                "You must output one of these decision states: avoid, watch, probe, accumulate, high_conviction_accumulate.\n"
+                "Required reasoning steps:\n"
+                "1. State whether the long-term thesis is intact.\n"
+                "2. State whether valuation offers a margin of safety.\n"
+                "3. State whether technicals weaken timing only, or signal deeper thesis risk.\n"
+                "4. State what would upgrade the decision by one level.\n"
+                "5. State what would downgrade the decision by one level.\n"
+                "Rules: Do not let momentum, RS rank, options flow, or supertrend dominate a VI mandate. "
+                "If fundamentals are mixed but survivability is strong and valuation is improving, prefer watch or probe over avoid. "
+                "If long-term catalysts exist but near-term catalysts are absent, say so explicitly. "
+                "If there is disagreement between agents, resolve it in favor of the active mandate rather than defaulting to the most conservative voice.\n"
+            )
         messages = [
             ChatMessage(
                 role="system",
                 content=localize_prompt(
-                    (
+                    vi_prefix + (
                         "You are the Chief Strategist of an elite quantitative hedge fund. Your primary goal is capital preservation and high-probability swing trades (T+7 to T+30). "
                         "Analyze the intersection of fundamentals, technical indicators, and news sentiment. "
                         "RULES: "
@@ -131,7 +160,9 @@ class ChiefStrategistAgent:
                     f"MacroContext: {macro_context.model_dump(mode='json') if macro_context else None}\n"
                     f"OptionsFlow: {options_flow.model_dump(mode='json') if options_flow else None}\n"
                     "Return JSON fields: ticker, action, conviction_score, entry_price, take_profit, stop_loss, "
-                    "proposed_position_size_pct, market_regime, vix_level, thesis, key_risks, evidence, conflict_assessment. "
+                    "proposed_position_size_pct, market_regime, vix_level, thesis, key_risks, evidence, conflict_assessment"
+                    + (", decision_state, upgrade_trigger, downgrade_trigger" if is_vi else "") +
+                    ". "
                     "action MUST be one of: buy, accumulate, hnew, reduce, sell, avoid. "
                     "market_regime MUST be one of: bull, bear, sideways."
                 ),

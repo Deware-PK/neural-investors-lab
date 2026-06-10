@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     tavily_search_depth: Literal["ultra-fast", "basic", "fast", "advanced"] = Field(
         default="fast", alias="TAVILY_SEARCH_DEPTH"
     )
+    investment_style: Literal["swing_trader", "deep_value_vi"] = Field(
+        default="swing_trader", alias="INVESTMENT_STYLE"
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -4,6 +4,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from src.models.vi_schema import DecisionState
+
 
 class Action(StrEnum):
     BUY = "buy"
@@ -41,6 +43,12 @@ class FinalSynthesis(BaseModel):
     key_risks: list[str] = Field(default_factory=list)
     evidence: list[EvidenceItem] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    decision_state: DecisionState | None = None
+    upgrade_trigger: str | None = None
+    downgrade_trigger: str | None = None
+    stop_loss_policy: str | None = None
+    add_on_policy: str | None = None
+    hard_block_risk: str | None = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -65,6 +73,8 @@ class FinalSynthesis(BaseModel):
 
     @model_validator(mode="after")
     def validate_trade_levels(self) -> "FinalSynthesis":
+        if self.decision_state in {DecisionState.AVOID, DecisionState.WATCH}:
+            return self
         bullish_actions = {Action.BUY, Action.ACCUMULATE}
         if self.action in bullish_actions:
             missing = [

@@ -19,6 +19,7 @@ from src.models.technical_schema import (
     VolatilitySignal,
     VolumeSignal,
 )
+from src.models.vi_schema import MandateContext
 
 try:
     import pandas_ta as ta
@@ -206,6 +207,8 @@ class IndicatorMath:
             elif altman < 1.8:
                 weaknesses.append("Altman Z-Score indicates elevated distress risk")
 
+        vi = self._compute_vi_scores(piotroski, peg, altman)
+
         return FundamentalAnalysis(
             ticker=ticker.upper(),
             piotroski_f_score=piotroski,
@@ -224,6 +227,16 @@ class IndicatorMath:
                 return_on_equity=None,
                 free_cash_flow=None,
             ),
+            quality_score=vi["quality_score"],
+            balance_sheet_score=vi["balance_sheet_score"],
+            cash_flow_quality_score=vi["cash_flow_quality_score"],
+            dilution_risk=vi["dilution_risk"],
+            cyclicality_risk=vi["cyclicality_risk"],
+            thesis_durability=vi["thesis_durability"],
+            valuation_regime=vi["valuation_regime"],
+            margin_of_safety_pct=vi["margin_of_safety_pct"],
+            thesis_impairment_flag=vi["thesis_impairment_flag"],
+            hard_block_fundamental=vi["hard_block_fundamental"],
         )
 
     @staticmethod
@@ -320,6 +333,53 @@ class IndicatorMath:
             + 0.6 * (market_cap / total_liabilities)
             + 1.0 * (revenue / total_assets)
         )
+
+    @staticmethod
+    def _compute_vi_scores(
+        piotroski: int | None,
+        peg: float | None,
+        altman: float | None,
+    ) -> dict[str, object]:
+        quality_score: float | None = None
+        if piotroski is not None:
+            quality_score = round(piotroski / 9 * 10, 1)
+
+        balance_sheet_score: float | None = None
+        if altman is not None:
+            if altman >= 3:
+                balance_sheet_score = 8.0
+            elif altman >= 2:
+                balance_sheet_score = 6.0
+            elif altman >= 1:
+                balance_sheet_score = 4.0
+            else:
+                balance_sheet_score = 2.0
+
+        valuation_regime: str | None = None
+        if peg is not None:
+            if peg < 0.8:
+                valuation_regime = "cheap"
+            elif peg <= 1.5:
+                valuation_regime = "reasonable"
+            else:
+                valuation_regime = "expensive"
+
+        hard_block: str = "none"
+        if altman is not None and altman < 1.0:
+            hard_block = "insolvency_risk"
+
+        return {
+            "quality_score": quality_score,
+            "balance_sheet_score": balance_sheet_score,
+            "cash_flow_quality_score": None,
+            "dilution_risk": "medium",
+            "cyclicality_risk": "medium",
+            "thesis_durability": "medium",
+            "valuation_regime": valuation_regime,
+            "margin_of_safety_pct": None,
+            "thesis_impairment_flag": False,
+            "hard_block_fundamental": hard_block,
+        }
 
     @staticmethod
     def _rsi(close: pd.Series, length: int = 14) -> pd.Series:
