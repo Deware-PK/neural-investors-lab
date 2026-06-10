@@ -85,6 +85,7 @@ class ChartistAgent:
                         "3. Do not invent precise numeric prices; use visual estimation for 'support_zones' and 'resistance_zones' (e.g., 'Demand zone around recent swing low'). "
                         "4. In 'observed_patterns', strictly name standard patterns (e.g., Bull Flag, Double Bottom, Bearish Engulfing) only if they are clearly visible. "
                         "5. Evaluate if the visual volume trend validates the price action. "
+                        "6. Always include a 'summary' field: 1-2 sentences describing the overall chart condition, combining trend direction, key pattern, and sentiment. "
                         "Your visual context will serve as a crucial validation layer for algorithmic indicators."
                     ),
                     lang,
