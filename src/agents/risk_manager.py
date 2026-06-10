@@ -1,4 +1,5 @@
 import logging
+from importlib import resources
 
 from src.agents.json_utils import parse_json_model
 from src.core.config import Settings, get_settings
@@ -109,19 +110,14 @@ class RiskManagerAgent:
         is_vi = self.mandate is not None and self.mandate.investment_style == "deep_value_vi"
         vi_prefix = ""
         if is_vi:
-            vi_prefix = (
-                f"ACTIVE MANDATE: {self.mandate.model_dump(mode='json')}\n"
-                "You are the Chief Risk Officer (CRO) in a multi-agent investment system. "
-                "Your role is to translate the CEO's mandate-aware decision into a position-sizing and risk-governance plan. "
-                "You protect capital, but you must not override the active mandate without a hard block.\n"
-                "Primary rule: In deep_value_vi mode, your job is not to eliminate all drawdown risk. "
-                "Your job is to prevent thesis-breaking overexposure.\n"
-                "Do not set position to 0% solely because of bearish technicals. "
-                "Kelly fraction may inform caps, but must not be treated as absolute truth for long-horizon discretionary value investing. "
-                "VaR and ATR can reduce initial sizing, but should not auto-reject intact long-term theses. "
-                "Prefer staged buying and thesis-based re-evaluation over hard stop-losses for VI mode. "
-                "Use hard rejection only for true hard-block conditions.\n"
-            )
+            prompt_text = resources.files("src.core.prompts").joinpath("cro_prompt_vi.md").read_text()
+            vi_prefix = prompt_text.format(
+                investment_style=self.mandate.investment_style,
+                capital_preservation_priority=self.mandate.capital_preservation_priority,
+                max_initial_probe_pct=self.mandate.max_initial_probe_pct,
+                max_total_position_pct=self.mandate.max_total_position_pct,
+                entry_mode=self.mandate.entry_mode,
+            ) + "\n"
         messages = [
             ChatMessage(
                 role="system",
@@ -145,7 +141,9 @@ class RiskManagerAgent:
                 content=(
                     f"StrategyDraft: {draft.model_dump(mode='json')}\n"
                     f"PythonRiskAssessment: {risk_assessment.model_dump(mode='json')}\n"
-                    "Return JSON fields: risk_decision, approved_position_size_pct, rationale, additional_risks."
+                    "Return JSON fields: risk_decision, approved_position_size_pct, rationale, additional_risks"
+                    + (", stop_loss_policy, add_on_policy, hard_block_risk" if is_vi else "") +
+                    "."
                 ),
             ),
         ]
@@ -188,9 +186,9 @@ class RiskManagerAgent:
             decision_state=draft.decision_state,
             upgrade_trigger=draft.upgrade_trigger,
             downgrade_trigger=draft.downgrade_trigger,
-            stop_loss_policy="soft_thesis_stop" if is_vi else None,
-            add_on_policy="Add only on improved valuation or confirmed thesis progress." if is_vi else None,
-            hard_block_risk=risk_assessment.veto_reason if risk_assessment.veto else None,
+            stop_loss_policy=review.stop_loss_policy if is_vi else None,
+            add_on_policy=review.add_on_policy if is_vi else None,
+            hard_block_risk=review.hard_block_risk if is_vi else None,
         )
 
     def _vi_sizing(self, draft: StrategyDraft, technicals: TechnicalAnalysis | None = None) -> RiskAssessment:
@@ -199,41 +197,36 @@ class RiskManagerAgent:
                 ticker=draft.ticker, position_size_pct=0, kelly_fraction=0,
                 value_at_risk_pct=0, max_drawdown_pct=0, risk_rating="low", veto=False,
             )
-        ds = draft.decision_state
-        if ds is None or ds == DecisionState.AVOID:
-            return RiskAssessment(
-                ticker=draft.ticker, position_size_pct=0, kelly_fraction=0,
-                value_at_risk_pct=0, max_drawdown_pct=0, risk_rating="low", veto=False,
-            )
-        if ds == DecisionState.WATCH:
-            return RiskAssessment(
-                ticker=draft.ticker, position_size_pct=0, kelly_fraction=0,
-                value_at_risk_pct=0, max_drawdown_pct=0, risk_rating="low", veto=False,
-            )
+        ds = draft.decision_state or DecisionState.WATCH
+        if ds in {DecisionState.AVOID, DecisionState.WATCH}:
+            base_size = 0.0
+        elif ds == DecisionState.PROBE:
+            max_probe = self.mandate.max_initial_probe_pct
+            base_size = min(0.25, max_probe)
+        elif ds == DecisionState.ACCUMULATE:
+            max_total = self.mandate.max_total_position_pct
+            base_size = min(1.5, max_total)
+        else:
+            base_size = self.mandate.max_total_position_pct
+
+        win_probability = self._conviction_to_probability(draft.conviction_score)
+        reward_risk = self._reward_risk_ratio(draft) if draft.entry_price and draft.stop_loss and draft.take_profit else 1.0
+        kelly_fraction = self._kelly_fraction(win_probability, reward_risk)
+        max_total = self.mandate.max_total_position_pct
+        kelly_cap = kelly_fraction * max_total
         if ds == DecisionState.PROBE:
-            pct = min(0.5, self.mandate.max_initial_probe_pct)
-            return RiskAssessment(
-                ticker=draft.ticker, position_size_pct=round(pct, 2), kelly_fraction=0,
-                value_at_risk_pct=round(pct * 0.05, 2), max_drawdown_pct=5,
-                risk_rating="low", veto=False,
-            )
-        if ds == DecisionState.ACCUMULATE:
-            pct = min(1.5, self.mandate.max_total_position_pct)
-            return RiskAssessment(
-                ticker=draft.ticker, position_size_pct=round(pct, 2), kelly_fraction=0,
-                value_at_risk_pct=round(pct * 0.05, 2), max_drawdown_pct=5,
-                risk_rating="moderate", veto=False,
-            )
-        if ds == DecisionState.HIGH_CONVICTION_ACCUMULATE:
-            pct = min(3.0, self.mandate.max_total_position_pct)
-            return RiskAssessment(
-                ticker=draft.ticker, position_size_pct=round(pct, 2), kelly_fraction=0,
-                value_at_risk_pct=round(pct * 0.05, 2), max_drawdown_pct=5,
-                risk_rating="moderate", veto=False,
-            )
+            kelly_cap = max(kelly_cap, 0.25)
+        position_size_pct = min(base_size, kelly_cap) if kelly_cap > 0 else base_size
+        risk_rating = "low" if position_size_pct <= 1.0 else "medium"
         return RiskAssessment(
-            ticker=draft.ticker, position_size_pct=0, kelly_fraction=0,
-            value_at_risk_pct=0, max_drawdown_pct=0, risk_rating="low", veto=False,
+            ticker=draft.ticker,
+            position_size_pct=round(position_size_pct, 2),
+            kelly_fraction=round(kelly_fraction, 4),
+            value_at_risk_pct=round(position_size_pct, 2),
+            max_drawdown_pct=0,
+            risk_rating=risk_rating,
+            veto=False,
+            veto_reason=None,
         )
 
     @staticmethod

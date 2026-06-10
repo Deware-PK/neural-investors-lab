@@ -1,4 +1,5 @@
 import logging
+from importlib import resources
 
 from src.agents.json_utils import parse_json_model
 from src.agents.researcher import ResearcherAgent
@@ -107,29 +108,15 @@ class ChiefStrategistAgent:
         is_vi = self.mandate is not None and self.mandate.investment_style == "deep_value_vi"
         vi_prefix = ""
         if is_vi:
-            vi_prefix = (
-                f"ACTIVE MANDATE: {self.mandate.model_dump(mode='json')}\n"
-                "You are the Chief Strategist (CEO) in a multi-agent investment system. "
-                "You synthesize Auditor, Chartist, and Researcher outputs into a mandate-aware investment decision. "
-                "You are not a short-term trader unless the mandate says so.\n"
-                "Decision philosophy in deep_value_vi mode:\n"
-                "1. Fundamental survivability and valuation dominate short-term price action.\n"
-                "2. Technicals determine entry quality, not long-term thesis validity.\n"
-                "3. A downtrend does not invalidate a value thesis by itself.\n"
-                "4. Use staged decisions rather than categorical avoidance when the thesis is intact but timing is weak.\n"
-                "5. Avoid only when hard blocks exist or when long-term expected value is unattractive.\n"
-                "You must output one of these decision states: avoid, watch, probe, accumulate, high_conviction_accumulate.\n"
-                "Required reasoning steps:\n"
-                "1. State whether the long-term thesis is intact.\n"
-                "2. State whether valuation offers a margin of safety.\n"
-                "3. State whether technicals weaken timing only, or signal deeper thesis risk.\n"
-                "4. State what would upgrade the decision by one level.\n"
-                "5. State what would downgrade the decision by one level.\n"
-                "Rules: Do not let momentum, RS rank, options flow, or supertrend dominate a VI mandate. "
-                "If fundamentals are mixed but survivability is strong and valuation is improving, prefer watch or probe over avoid. "
-                "If long-term catalysts exist but near-term catalysts are absent, say so explicitly. "
-                "If there is disagreement between agents, resolve it in favor of the active mandate rather than defaulting to the most conservative voice.\n"
-            )
+            prompt_text = resources.files("src.core.prompts").joinpath("ceo_prompt_vi.md").read_text()
+            vi_prefix = prompt_text.format(
+                investment_style=self.mandate.investment_style,
+                time_horizon_days=self.mandate.time_horizon_days,
+                allow_countertrend_entries=self.mandate.allow_countertrend_entries,
+                technicals_role=self.mandate.technicals_role,
+                entry_mode=self.mandate.entry_mode,
+                capital_preservation_priority=self.mandate.capital_preservation_priority,
+            ) + "\n"
         messages = [
             ChatMessage(
                 role="system",
@@ -175,10 +162,28 @@ class ChiefStrategistAgent:
             temperature=0.1,
         )
         draft = parse_json_model(response.content, StrategyDraft)
+        draft = self._post_process_vi_decision(draft, fundamentals)
         if draft.ticker.upper() != fundamentals.ticker.upper():
             draft = draft.model_copy(update={"ticker": fundamentals.ticker.upper()})
         if draft.conflict_assessment is None:
             draft = draft.model_copy(update={"conflict_assessment": conflict})
         if draft.action in {Action.BUY, Action.ACCUMULATE} and draft.entry_price is None:
             draft = draft.model_copy(update={"action": Action.HOLD, "proposed_position_size_pct": 0})
+        return draft
+
+    def _post_process_vi_decision(
+        self,
+        draft: StrategyDraft,
+        fundamentals: FundamentalAnalysis,
+    ) -> StrategyDraft:
+        if not self.mandate or self.mandate.investment_style != "deep_value_vi":
+            return draft
+        if draft.decision_state == DecisionState.AVOID:
+            if (
+                fundamentals.hard_block_fundamental == "none"
+                and not fundamentals.thesis_impairment_flag
+                and fundamentals.valuation_regime == "expensive"
+            ):
+                draft.decision_state = DecisionState.WATCH
+                draft.action = Action.HOLD
         return draft

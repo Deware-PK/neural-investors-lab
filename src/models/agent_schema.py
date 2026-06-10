@@ -107,6 +107,9 @@ class RiskReview(BaseModel):
     approved_position_size_pct: float = Field(ge=0, le=100)
     rationale: str
     additional_risks: list[str] = Field(default_factory=list)
+    stop_loss_policy: str | None = None
+    add_on_policy: str | None = None
+    hard_block_risk: str | None = None
 
     model_config = ConfigDict(extra="forbid")
 
