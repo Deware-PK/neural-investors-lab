@@ -127,7 +127,7 @@ class ChiefStrategistAgent:
                         "RULES: "
                         "1. Return ONLY strict JSON matching the StrategyDraft schema. "
                         "2. Do not invent numeric metrics; rely entirely on the provided Python calculations. "
-                        "3. If 'ConflictAssessment' flags a contradiction (e.g., Bearish news vs Bullish technicals), you MUST address it in your 'thesis' and reflect the uncertainty by lowering the 'conviction_score' or changing the action to 'hnew'. "
+                        "3. If 'ConflictAssessment' flags a contradiction (e.g., Bearish news vs Bullish technicals), you MUST address it in your 'thesis' and reflect the uncertainty by lowering the 'conviction_score' or changing the action to 'hold'. "
                         "4. For BUY/ACCUMULATE actions, strictly set 'entry_price', 'take_profit' (targeting a realistic 1.5x - 2.0x ATR), and 'stop_loss' using the provided technical support/resistance levels. "
                         "5. MacroContext is the GLOBAL backdrop — a bear market regime or extreme VIX must lower conviction regardless of individual stock signals. "
                         "6. Your 'thesis' must be a ruthless, logical deduction explaining EXACTLY why the reward-to-risk ratio justifies the trade in the current market context."
@@ -150,7 +150,7 @@ class ChiefStrategistAgent:
                     "proposed_position_size_pct, market_regime, vix_level, thesis, key_risks, evidence, conflict_assessment"
                     + (", decision_state, upgrade_trigger, downgrade_trigger" if is_vi else "") +
                     ". "
-                    "action MUST be one of: buy, accumulate, hnew, reduce, sell, avoid. "
+                    "action MUST be one of: buy, accumulate, hold, reduce, sell, avoid. "
                     "market_regime MUST be one of: bull, bear, sideways."
                 ),
             ),

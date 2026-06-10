@@ -10,7 +10,7 @@ from src.models.vi_schema import DecisionState
 class Action(StrEnum):
     BUY = "buy"
     ACCUMULATE = "accumulate"
-    HOLD = "hnew"
+    HOLD = "hold"
     REDUCE = "reduce"
     SELL = "sell"
     AVOID = "avoid"

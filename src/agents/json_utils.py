@@ -111,11 +111,11 @@ def normalize_strategy_draft(payload: dict[str, Any], ticker: str) -> dict[str, 
     action_mapping = {
         "bullish": "buy",
         "bearish": "sell",
-        "neutral": "hnew",
+        "neutral": "hold",
         "long": "buy",
         "short": "sell",
     }
-    valid_actions = {"buy", "accumulate", "hnew", "reduce", "sell", "avoid"}
+    valid_actions = {"buy", "accumulate", "hold", "reduce", "sell", "avoid"}
     if "action" in payload and isinstance(payload["action"], str):
         action_lower = payload["action"].strip().lower()
         if action_lower in action_mapping:
@@ -429,7 +429,7 @@ def normalize_risk_review(payload: dict[str, Any]) -> dict[str, Any]:
         "accepted": "approved",
         "ok": "approved",
         "go": "approved",
-        "hnew": "approved",
+        "hold": "approved",
         "wait": "approved",
         "watch": "approved",
     }
