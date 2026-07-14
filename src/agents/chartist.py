@@ -30,7 +30,7 @@ class ChartistAgent:
     ) -> None:
         self.settings = settings or get_settings()
         self.finance_api = finance_api or FinanceAPI(settings=self.settings)
-        self.indicator_math = indicator_math or IndicatorMath()
+        self.indicator_math = indicator_math or IndicatorMath(settings=self.settings)
         self.llm_client = llm_client
 
     def analyze(self, ticker: str, period: str = "2y", interval: str = "1d") -> TechnicalAnalysis:

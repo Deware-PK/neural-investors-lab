@@ -1,8 +1,11 @@
 from collections.abc import Iterable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 import numpy as np
+
+if TYPE_CHECKING:
+    from src.core.config import Settings
 
 from src.models.fundamental_schema import FundamentalAnalysis, FundamentalSnapshot
 from src.models.macro_schema import MultiTimeframeConfluence
@@ -28,6 +31,48 @@ except ImportError:
 
 
 class IndicatorMath:
+    def __init__(self, settings: "Settings | None" = None) -> None:
+        if settings is None:
+            from src.core.config import get_settings
+
+            settings = get_settings()
+        self.settings = settings
+
+    def _resolve_rsi_thresholds(self, rsi: pd.Series) -> tuple[float, float]:
+        """Resolve RSI overbought/oversold thresholds.
+
+        Fixed by default. When ``settings.adaptive_thresholds`` is enabled and enough
+        history is available, thresholds become the ticker's own trailing percentile
+        distribution instead of the fixed 70/30 convention.
+        """
+        overbought = self.settings.rsi_overbought
+        oversold = self.settings.rsi_oversold
+        if not self.settings.adaptive_thresholds:
+            return overbought, oversold
+        history = rsi.dropna().tail(self.settings.adaptive_lookback)
+        if len(history) < self.settings.adaptive_lookback:
+            return overbought, oversold
+        adaptive_overbought = float(history.quantile(self.settings.adaptive_percentile_overbought))
+        adaptive_oversold = float(history.quantile(self.settings.adaptive_percentile_oversold))
+        if pd.isna(adaptive_overbought) or pd.isna(adaptive_oversold) or adaptive_overbought <= adaptive_oversold:
+            return overbought, oversold
+        return adaptive_overbought, adaptive_oversold
+
+    def _resolve_mfi_thresholds(self, mfi: pd.Series) -> tuple[float, float]:
+        """Resolve MFI overbought/oversold thresholds. See `_resolve_rsi_thresholds`."""
+        overbought = self.settings.mfi_overbought
+        oversold = self.settings.mfi_oversold
+        if not self.settings.adaptive_thresholds:
+            return overbought, oversold
+        history = mfi.dropna().tail(self.settings.adaptive_lookback)
+        if len(history) < self.settings.adaptive_lookback:
+            return overbought, oversold
+        adaptive_overbought = float(history.quantile(self.settings.adaptive_percentile_overbought))
+        adaptive_oversold = float(history.quantile(self.settings.adaptive_percentile_oversold))
+        if pd.isna(adaptive_overbought) or pd.isna(adaptive_oversold) or adaptive_overbought <= adaptive_oversold:
+            return overbought, oversold
+        return adaptive_overbought, adaptive_oversold
+
     def analyze_technical(
         self,
         ticker: str,
@@ -57,22 +102,60 @@ class IndicatorMath:
         mfi = self._mfi(high, low, close, volume)
         vwap = self._vwap(high, low, close, volume)
         poc = self._point_of_control(close, volume)
-        volume_trend = self._volume_trend(volume)
+        volume_trend = self._volume_trend(
+            volume,
+            bullish_multiplier=self.settings.volume_trend_bullish_multiplier,
+            bearish_multiplier=self.settings.volume_trend_bearish_multiplier,
+        )
 
         atr = self._atr(high, low, close)
         historical_volatility = self._historical_volatility(close)
-        bollinger_state = self._bollinger_state(close)
+        bollinger_state = self._bollinger_state(
+            close,
+            squeeze_quantile=self.settings.bollinger_squeeze_quantile,
+            low_quantile=self.settings.bollinger_low_quantile,
+            high_quantile=self.settings.bollinger_high_quantile,
+        )
         support_levels, resistance_levels = self._support_resistance(close)
 
         trendline = self._fit_trendlines(high, low, close)
         pattern = self._detect_patterns(frame["open"], high, low, close)
-        supertrend = self._supertrend(high, low, close)
-        relative_strength = self._relative_strength(close, benchmark_scores)
+        supertrend = self._supertrend(
+            high,
+            low,
+            close,
+            atr_period=self.settings.supertrend_atr_period,
+            multiplier=self.settings.supertrend_multiplier,
+        )
+        relative_strength = self._relative_strength(
+            close,
+            benchmark_scores,
+            weights=(
+                self.settings.rs_weight_3m,
+                self.settings.rs_weight_6m,
+                self.settings.rs_weight_9m,
+                self.settings.rs_weight_12m,
+            ),
+        )
+
+        rsi_overbought, rsi_oversold = self._resolve_rsi_thresholds(rsi)
+        mfi_overbought, mfi_oversold = self._resolve_mfi_thresholds(mfi)
 
         tags = [
             ma_state,
-            self._momentum_tag(self._latest(rsi), self._latest(macd_histogram), divergence),
-            self._volume_tag(self._latest(mfi), volume_trend),
+            self._momentum_tag(
+                self._latest(rsi),
+                self._latest(macd_histogram),
+                divergence,
+                overbought=rsi_overbought,
+                oversold=rsi_oversold,
+            ),
+            self._volume_tag(
+                self._latest(mfi),
+                volume_trend,
+                overbought=mfi_overbought,
+                oversold=mfi_oversold,
+            ),
             self._volatility_tag(self._latest(atr), historical_volatility, bollinger_state),
             supertrend.tag if supertrend else "supertrend:unknown",
             relative_strength.tag if relative_strength else "rs_rank:unknown",
@@ -190,24 +273,34 @@ class IndicatorMath:
 
         if piotroski is not None:
             tags.append(f"piotroski:{piotroski}")
-            if piotroski >= 7:
+            if piotroski >= self.settings.piotroski_strong_threshold:
                 strengths.append("Strong Piotroski F-Score")
-            elif piotroski <= 3:
+            elif piotroski <= self.settings.piotroski_weak_threshold:
                 weaknesses.append("Weak Piotroski F-Score")
         if peg is not None:
             tags.append(f"peg:{round(peg, 2)}")
-            if peg < 1:
+            if peg < self.settings.peg_cheap_threshold:
                 strengths.append("Growth-adjusted valuation appears attractive")
-            elif peg > 2:
+            elif peg > self.settings.peg_expensive_threshold:
                 weaknesses.append("Growth-adjusted valuation appears stretched")
         if altman is not None:
             tags.append(f"altman_z:{round(altman, 2)}")
-            if altman > 3:
+            if altman > self.settings.altman_safe_threshold:
                 strengths.append("Altman Z-Score indicates low distress risk")
-            elif altman < 1.8:
+            elif altman < self.settings.altman_distress_threshold:
                 weaknesses.append("Altman Z-Score indicates elevated distress risk")
 
-        vi = self._compute_vi_scores(piotroski, peg, altman)
+        vi = self._compute_vi_scores(
+            piotroski,
+            peg,
+            altman,
+            altman_bucket_high=self.settings.altman_bucket_high,
+            altman_bucket_mid=self.settings.altman_bucket_mid,
+            altman_bucket_low=self.settings.altman_bucket_low,
+            peg_regime_cheap=self.settings.peg_regime_cheap,
+            peg_regime_reasonable=self.settings.peg_regime_reasonable,
+            altman_insolvency_threshold=self.settings.altman_insolvency_threshold,
+        )
 
         return FundamentalAnalysis(
             ticker=ticker.upper(),
@@ -263,7 +356,7 @@ class IndicatorMath:
 
     @staticmethod
     def piotroski_f_score(income_statement: FinancialStatement, balance_sheet: FinancialStatement) -> int | None:
-        net_income = _row_values(income_statement, ["Net Income", "Net Income Common Stockhnewers"])
+        net_income = _row_values(income_statement, ["Net Income", "Net Income Common Stockholders"])
         revenue = _row_values(income_statement, ["Total Revenue", "Operating Revenue"])
         gross_profit = _row_values(income_statement, ["Gross Profit"])
         total_assets = _row_values(balance_sheet, ["Total Assets"])
@@ -339,6 +432,12 @@ class IndicatorMath:
         piotroski: int | None,
         peg: float | None,
         altman: float | None,
+        altman_bucket_high: float = 3.0,
+        altman_bucket_mid: float = 2.0,
+        altman_bucket_low: float = 1.0,
+        peg_regime_cheap: float = 0.8,
+        peg_regime_reasonable: float = 1.5,
+        altman_insolvency_threshold: float = 1.0,
     ) -> dict[str, object]:
         quality_score: float | None = None
         if piotroski is not None:
@@ -346,26 +445,26 @@ class IndicatorMath:
 
         balance_sheet_score: float | None = None
         if altman is not None:
-            if altman >= 3:
+            if altman >= altman_bucket_high:
                 balance_sheet_score = 8.0
-            elif altman >= 2:
+            elif altman >= altman_bucket_mid:
                 balance_sheet_score = 6.0
-            elif altman >= 1:
+            elif altman >= altman_bucket_low:
                 balance_sheet_score = 4.0
             else:
                 balance_sheet_score = 2.0
 
         valuation_regime: str | None = None
         if peg is not None:
-            if peg < 0.8:
+            if peg < peg_regime_cheap:
                 valuation_regime = "cheap"
-            elif peg <= 1.5:
+            elif peg <= peg_regime_reasonable:
                 valuation_regime = "reasonable"
             else:
                 valuation_regime = "expensive"
 
         hard_block: str = "none"
-        if altman is not None and altman < 1.0:
+        if altman is not None and altman < altman_insolvency_threshold:
             hard_block = "insolvency_risk"
 
         return {
@@ -513,6 +612,7 @@ class IndicatorMath:
     def _relative_strength(
         close: pd.Series,
         benchmark_scores: list[float] | None = None,
+        weights: tuple[float, float, float, float] = (0.4, 0.2, 0.2, 0.2),
     ) -> RelativeStrengthSignal | None:
         """Calculate IBD-style RS score and rank."""
         if len(close) < 63:
@@ -532,12 +632,14 @@ class IndicatorMath:
         perf_9m = _perf(189)
         perf_12m = _perf(252)
 
-        weights = []
+        w3, w6, w9, w12 = weights
+        resolved_weights = []
         values = []
-        for w, v in [(0.4, perf_3m), (0.2, perf_6m), (0.2, perf_9m), (0.2, perf_12m)]:
+        for w, v in [(w3, perf_3m), (w6, perf_6m), (w9, perf_9m), (w12, perf_12m)]:
             if v is not None:
-                weights.append(w)
+                resolved_weights.append(w)
                 values.append(v)
+        weights = resolved_weights
 
         if not values:
             return None
@@ -571,7 +673,13 @@ class IndicatorMath:
         return float(returns.tail(length).std() * (252 ** 0.5) * 100)
 
     @staticmethod
-    def _bollinger_state(close: pd.Series, length: int = 20) -> str:
+    def _bollinger_state(
+        close: pd.Series,
+        length: int = 20,
+        squeeze_quantile: float = 0.2,
+        low_quantile: float = 0.35,
+        high_quantile: float = 0.8,
+    ) -> str:
         middle = close.rolling(length).mean()
         deviation = close.rolling(length).std()
         upper = middle + 2 * deviation
@@ -582,11 +690,11 @@ class IndicatorMath:
             return "normal"
         if close.iloc[-1] > upper.iloc[-1] or close.iloc[-1] < lower.iloc[-1]:
             return "breakout"
-        if latest_bandwidth <= bandwidth.dropna().quantile(0.2):
+        if latest_bandwidth <= bandwidth.dropna().quantile(squeeze_quantile):
             return "squeeze"
-        if latest_bandwidth >= bandwidth.dropna().quantile(0.8):
+        if latest_bandwidth >= bandwidth.dropna().quantile(high_quantile):
             return "high"
-        if latest_bandwidth <= bandwidth.dropna().quantile(0.35):
+        if latest_bandwidth <= bandwidth.dropna().quantile(low_quantile):
             return "low"
         return "normal"
 
@@ -623,14 +731,18 @@ class IndicatorMath:
         return "mixed"
 
     @staticmethod
-    def _volume_trend(volume: pd.Series) -> str:
+    def _volume_trend(
+        volume: pd.Series,
+        bullish_multiplier: float = 1.25,
+        bearish_multiplier: float = 0.75,
+    ) -> str:
         average_volume = volume.rolling(20).mean().iloc[-1]
         latest_volume = volume.iloc[-1]
         if pd.isna(average_volume) or average_volume == 0:
             return "neutral"
-        if latest_volume > average_volume * 1.25:
+        if latest_volume > average_volume * bullish_multiplier:
             return "bullish"
-        if latest_volume < average_volume * 0.75:
+        if latest_volume < average_volume * bearish_multiplier:
             return "bearish"
         return "neutral"
 
@@ -654,13 +766,19 @@ class IndicatorMath:
         return "none"
 
     @staticmethod
-    def _momentum_tag(rsi: float | None, histogram: float | None, divergence: str) -> str:
+    def _momentum_tag(
+        rsi: float | None,
+        histogram: float | None,
+        divergence: str,
+        overbought: float = 70.0,
+        oversold: float = 30.0,
+    ) -> str:
         if divergence != "none":
             return f"momentum:{divergence}"
-        if rsi is not None and rsi >= 70:
+        if rsi is not None and rsi >= overbought:
             return "momentum:overbought"
-        if rsi is not None and rsi <= 30:
-            return "momentum:oversnew"
+        if rsi is not None and rsi <= oversold:
+            return "momentum:oversold"
         if histogram is not None and histogram > 0:
             return "momentum:positive"
         if histogram is not None and histogram < 0:
@@ -668,11 +786,16 @@ class IndicatorMath:
         return "momentum:neutral"
 
     @staticmethod
-    def _volume_tag(mfi: float | None, volume_trend: str) -> str:
-        if mfi is not None and mfi >= 80:
+    def _volume_tag(
+        mfi: float | None,
+        volume_trend: str,
+        overbought: float = 80.0,
+        oversold: float = 20.0,
+    ) -> str:
+        if mfi is not None and mfi >= overbought:
             return "volume:overbought_flow"
-        if mfi is not None and mfi <= 20:
-            return "volume:oversnew_flow"
+        if mfi is not None and mfi <= oversold:
+            return "volume:oversold_flow"
         return f"volume:{volume_trend}"
 
     @staticmethod

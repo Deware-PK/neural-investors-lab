@@ -33,6 +33,43 @@ class Settings(BaseSettings):
         default="swing_trader", alias="INVESTMENT_STYLE"
     )
 
+    # --- Technical indicator thresholds (indicator_math.py) ---
+    rsi_overbought: float = Field(default=70.0, alias="RSI_OVERBOUGHT")
+    rsi_oversold: float = Field(default=30.0, alias="RSI_OVERSOLD")
+    mfi_overbought: float = Field(default=80.0, alias="MFI_OVERBOUGHT")
+    mfi_oversold: float = Field(default=20.0, alias="MFI_OVERSOLD")
+    volume_trend_bullish_multiplier: float = Field(default=1.25, alias="VOLUME_TREND_BULLISH_MULTIPLIER")
+    volume_trend_bearish_multiplier: float = Field(default=0.75, alias="VOLUME_TREND_BEARISH_MULTIPLIER")
+    bollinger_squeeze_quantile: float = Field(default=0.2, ge=0, le=1, alias="BOLLINGER_SQUEEZE_QUANTILE")
+    bollinger_low_quantile: float = Field(default=0.35, ge=0, le=1, alias="BOLLINGER_LOW_QUANTILE")
+    bollinger_high_quantile: float = Field(default=0.8, ge=0, le=1, alias="BOLLINGER_HIGH_QUANTILE")
+    rs_weight_3m: float = Field(default=0.4, alias="RS_WEIGHT_3M")
+    rs_weight_6m: float = Field(default=0.2, alias="RS_WEIGHT_6M")
+    rs_weight_9m: float = Field(default=0.2, alias="RS_WEIGHT_9M")
+    rs_weight_12m: float = Field(default=0.2, alias="RS_WEIGHT_12M")
+    supertrend_atr_period: int = Field(default=10, ge=1, alias="SUPERTREND_ATR_PERIOD")
+    supertrend_multiplier: float = Field(default=3.0, alias="SUPERTREND_MULTIPLIER")
+
+    # --- Fundamental thresholds (indicator_math.py) ---
+    piotroski_strong_threshold: int = Field(default=7, alias="PIOTROSKI_STRONG_THRESHOLD")
+    piotroski_weak_threshold: int = Field(default=3, alias="PIOTROSKI_WEAK_THRESHOLD")
+    peg_cheap_threshold: float = Field(default=1.0, alias="PEG_CHEAP_THRESHOLD")
+    peg_expensive_threshold: float = Field(default=2.0, alias="PEG_EXPENSIVE_THRESHOLD")
+    altman_safe_threshold: float = Field(default=3.0, alias="ALTMAN_SAFE_THRESHOLD")
+    altman_distress_threshold: float = Field(default=1.8, alias="ALTMAN_DISTRESS_THRESHOLD")
+    altman_bucket_high: float = Field(default=3.0, alias="ALTMAN_BUCKET_HIGH")
+    altman_bucket_mid: float = Field(default=2.0, alias="ALTMAN_BUCKET_MID")
+    altman_bucket_low: float = Field(default=1.0, alias="ALTMAN_BUCKET_LOW")
+    peg_regime_cheap: float = Field(default=0.8, alias="PEG_REGIME_CHEAP")
+    peg_regime_reasonable: float = Field(default=1.5, alias="PEG_REGIME_REASONABLE")
+    altman_insolvency_threshold: float = Field(default=1.0, alias="ALTMAN_INSOLVENCY_THRESHOLD")
+
+    # --- Adaptive threshold mode (opt-in) ---
+    adaptive_thresholds: bool = Field(default=False, alias="ADAPTIVE_THRESHOLDS")
+    adaptive_lookback: int = Field(default=252, ge=30, alias="ADAPTIVE_LOOKBACK")
+    adaptive_percentile_overbought: float = Field(default=0.9, ge=0.5, le=1.0, alias="ADAPTIVE_PERCENTILE_OVERBOUGHT")
+    adaptive_percentile_oversold: float = Field(default=0.1, ge=0.0, le=0.5, alias="ADAPTIVE_PERCENTILE_OVERSOLD")
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

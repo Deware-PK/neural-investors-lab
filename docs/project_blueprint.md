@@ -126,7 +126,7 @@ LOG_LEVEL=INFO
       - Step 3: Draft the initial trading strategy (Entry, Take Profit, Stop Loss, and conviction narrative).
     4. `risk_manager.py`: (The CRO Hybrid Agent).
       - Math Step (Python): Takes the CEO's draft and applies strict Python risk formulas (e.g., Kelly Criterion, ATR-based volatility sizing, VaR).
-      - Agent Step (LLM): Uses CRO_MODEL to review the CEO's narrative against the mathematical risk limits. It hnews Veto Power to overwrite the CEO's position sizing if it violates risk threshnews.
+      - Agent Step (LLM): Uses CRO_MODEL to review the CEO's narrative against the mathematical risk limits. It holds Veto Power to overwrite the CEO's position sizing if it violates risk thresholds.
       - Output: Returns the absolute final, strictly validated JSON object based on `synthesis_schema.py`.
 
 ### **Part 5: Orchestration, Debate Loop & Telegram UI**

@@ -1,5 +1,6 @@
 import logging
 
+from src.core.config import Settings, get_settings
 from src.models.edgar_schema import EdgarBundle
 from src.models.fundamental_schema import FundamentalAnalysis
 from src.services.finance_api import FinanceAPI
@@ -10,9 +11,15 @@ logger = logging.getLogger(__name__)
 
 
 class AuditorAgent:
-    def __init__(self, finance_api: FinanceAPI | None = None, indicator_math: IndicatorMath | None = None) -> None:
-        self.finance_api = finance_api or FinanceAPI()
-        self.indicator_math = indicator_math or IndicatorMath()
+    def __init__(
+        self,
+        finance_api: FinanceAPI | None = None,
+        indicator_math: IndicatorMath | None = None,
+        settings: Settings | None = None,
+    ) -> None:
+        self.settings = settings or get_settings()
+        self.finance_api = finance_api or FinanceAPI(settings=self.settings)
+        self.indicator_math = indicator_math or IndicatorMath(settings=self.settings)
 
     def analyze(self, ticker: str, edgar_bundle: EdgarBundle | None = None) -> FundamentalAnalysis:
         symbol = ticker.upper()

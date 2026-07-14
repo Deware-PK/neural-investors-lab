@@ -332,6 +332,7 @@ class FinanceAPI:
 
     @staticmethod
     def price_frame_to_bars(frame: pd.DataFrame) -> list[PriceBar]:
+        frame = frame.dropna(subset=["Open", "High", "Low", "Close"])
         normalized = frame.reset_index()
         if "Date" not in normalized.columns and "Datetime" in normalized.columns:
             normalized = normalized.rename(columns={"Datetime": "Date"})
